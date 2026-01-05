@@ -6,52 +6,54 @@ export const generateApiDoc = async (apis: ApiInfo[], template: string, projectN
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   if (!process.env.API_KEY) {
-    throw new Error("Lỗi: API_KEY không tìm thấy trong cấu hình.");
+    throw new Error("Lỗi: Không tìm thấy API_KEY trong hệ thống.");
   }
 
-  let finalFullDoc = "";
+  let fullDocumentContent = "";
   const currentDate = new Date().toLocaleDateString('vi-VN');
 
-  for (const api of apis) {
+  for (let i = 0; i < apis.length; i++) {
+    const api = apis[i];
     const parts: any[] = [];
     
-    const apiContext = `
+    const context = `
+      PROJECT: ${projectName}
       API_NAME: ${api.name}
       METHOD: ${api.method}
       ENDPOINT: ${api.endpoint}
       DESCRIPTION: ${api.description}
-      AUTH_TYPE: ${api.authType}
-      REQUEST_JSON: ${api.requestBody}
-      RESPONSE_JSON: ${api.responseBody}
+      AUTH: ${api.authType}
       INPUT_PARAMS: ${JSON.stringify(api.inputParams)}
       OUTPUT_PARAMS: ${JSON.stringify(api.outputParams)}
+      REQ_JSON: ${api.requestBody}
+      RES_JSON: ${api.responseBody}
     `;
 
     const prompt = `
-      Bạn là một chuyên gia Technical Writing. Hãy điền thông tin vào Template dưới đây dựa trên dữ liệu API cung cấp.
+      Bạn là một Technical Writer chuyên nghiệp. Hãy soạn thảo tài liệu cho API "${api.name}" theo cấu trúc 8 phần sau:
+      1. Thông tin chung: Tổng quan về chức năng.
+      2. Phương thức kết nối: Endpoint và Method.
+      3. Phương thức xác thực: Chi tiết về Auth.
+      4. Input: Tạo bảng Markdown | Trường | Kiểu | Req | Mô tả |.
+      5. Output: Tạo bảng Markdown | Trường | Kiểu | Mô tả |.
+      6. Sequence Diagram: Giữ chỗ bằng văn bản "[IMAGE_PLACEHOLDER]".
+      7. Mô tả luồng: Phân tích kỹ logic (Client -> Server -> DB) từ thông tin API và ảnh Sequence Diagram (nếu có).
+      8. Exception: Liệt kê bảng mã lỗi (400, 401, 403, 404, 500) và các trường hợp lỗi nghiệp vụ cụ thể.
 
-      DỮ LIỆU API:
-      ${apiContext}
-
-      TEMPLATE:
+      Sử dụng template sau để điền dữ liệu:
       ${template}
 
-      YÊU CẦU BẮT BUỘC:
-      1. Thay {{PROJECT_NAME}} bằng "${projectName}", {{CURRENT_DATE}} bằng "${currentDate}".
-      2. Tại {{REQUEST_DESCRIPTION_TABLE}}, bạn PHẢI tạo một bảng Markdown với các cột: | Trường (Field) | Kiểu dữ liệu | Bắt buộc | Mô tả ý nghĩa |. Hãy phân tích từ INPUT_PARAMS.
-      3. Tại {{RESPONSE_DESCRIPTION_TABLE}}, bạn PHẢI tạo một bảng Markdown với các cột: | Trường (Field) | Kiểu dữ liệu | Mô tả ý nghĩa |. Hãy phân tích từ OUTPUT_PARAMS.
-      4. Tại {{SEQUENCE_DIAGRAM}}, nếu tôi có gửi ảnh đính kèm, hãy giữ nguyên nội dung là "{{SEQUENCE_DIAGRAM_IMAGE}}".
-      5. Tại {{SEQUENCE_FLOW}}, hãy phân tích logic API hoặc ảnh sơ đồ trình tự (nếu có) để mô tả chi tiết các bước thực hiện của API (Client -> Server -> Database/Service -> Response).
-      6. Giữ nguyên định dạng và các phần tiêu đề của Template.
+      Dữ liệu đầu vào:
+      ${context}
     `;
 
     parts.push({ text: prompt });
 
-    if (api.sequenceDiagram && api.sequenceDiagram.includes('base64,')) {
-      const [header, data] = api.sequenceDiagram.split(',');
-      const mimeType = header.split(':')[1].split(';')[0];
+    if (api.sequenceDiagram && api.sequenceDiagram.startsWith('data:image')) {
+      const base64Data = api.sequenceDiagram.split(',')[1];
+      const mimeType = api.sequenceDiagram.split(';')[0].split(':')[1];
       parts.push({
-        inlineData: { data, mimeType }
+        inlineData: { data: base64Data, mimeType }
       });
     }
 
@@ -59,26 +61,29 @@ export const generateApiDoc = async (apis: ApiInfo[], template: string, projectN
       const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: { parts },
-        config: {
-          systemInstruction: "Bạn là Technical Writer. Luôn xuất ra Markdown sạch sẽ, sử dụng bảng cho các tham số.",
-          temperature: 0.1,
-        },
+        config: { temperature: 0.1 }
       });
 
-      let text = response.text || "";
-      
-      // Nhúng lại ảnh vào vị trí placeholder sau khi AI trả về
+      let apiDoc = response.text || "";
+
+      // Xử lý các Placeholder
       if (api.sequenceDiagram) {
-        text = text.replace("{{SEQUENCE_DIAGRAM_IMAGE}}", `\n\n<img src="${api.sequenceDiagram}" width="600" />\n\n`);
+        apiDoc = apiDoc.replace("{{SEQUENCE_IMAGE}}", `<img src="${api.sequenceDiagram}" style="width:100%; max-width:600px; display:block; margin:20px auto;" />`);
+        apiDoc = apiDoc.replace("[IMAGE_PLACEHOLDER]", "");
       } else {
-        text = text.replace("{{SEQUENCE_DIAGRAM_IMAGE}}", "*Không có sơ đồ trình tự*");
+        apiDoc = apiDoc.replace("{{SEQUENCE_IMAGE}}", "*Chưa cập nhật sơ đồ trình tự*");
       }
 
-      finalFullDoc += text + "\n\n<div style='page-break-after: always;'></div>\n\n";
+      apiDoc = apiDoc
+        .replace(/{{API_INDEX}}/g, (i + 1).toString())
+        .replace(/{{PROJECT_NAME}}/g, projectName)
+        .replace(/{{CURRENT_DATE}}/g, currentDate);
+
+      fullDocumentContent += apiDoc + "\n\n";
     } catch (error: any) {
-      finalFullDoc += `\n> Lỗi xử lý API ${api.name}: ${error.message}\n`;
+      fullDocumentContent += `\n> Lỗi khi tạo tài liệu cho API ${api.name}: ${error.message}\n`;
     }
   }
 
-  return finalFullDoc;
+  return fullDocumentContent;
 };

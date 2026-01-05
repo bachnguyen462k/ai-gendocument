@@ -1,52 +1,51 @@
 
 export const DEFAULT_TEMPLATE = `
-# TÀI LIỆU ĐẶC TẢ KỸ THUẬT API
-
-## 1. THÔNG TIN CHUNG
-- **Công ty**: [TÊN CÔNG TY CỦA BẠN]
-- **Dự án**: {{PROJECT_NAME}}
-- **Phiên bản**: 1.0.0
-- **Ngày tạo**: {{CURRENT_DATE}}
+# TÀI LIỆU CHI TIẾT ĐẶC TẢ API
 
 ---
 
-## 2. MÔ TẢ CHI TIẾT API: {{API_NAME}}
+## {{API_INDEX}}. MÔ TẢ CHI TIẾT API: {{API_NAME}}
 
-### 2.1. Thông tin Endpoint
-- **Mô tả chức năng**: {{DESCRIPTION}}
-- **Endpoint**: \`{{ENDPOINT}}\`
-- **Phương thức**: \`{{METHOD}}\`
-- **Xác thực (Auth)**: {{AUTH_TYPE}}
+### {{API_INDEX}}.1. Thông tin chung
+- **Tên API**: {{API_NAME}}
+- **Mô tả nghiệp vụ**: {{DESCRIPTION}}
+- **Hệ thống/Dự án**: {{PROJECT_NAME}}
 
-### 2.2. Chi tiết Tham số Đầu vào (Request)
-{{REQUEST_DESCRIPTION_TABLE}}
+### {{API_INDEX}}.2. Phương thức kết nối
+- **URL Endpoint**: \`{{ENDPOINT}}\`
+- **Giao thức/Method**: \`{{METHOD}}\`
 
-**Ví dụ Request Body (JSON):**
+### {{API_INDEX}}.3. Phương thức xác thực
+- **Cơ chế xác thực**: {{AUTH_TYPE}}
+- **Vị trí truyền**: Authorization Header
+
+### {{API_INDEX}}.4. Các trường dữ liệu input (Request)
+{{REQUEST_TABLE}}
+
+**Mẫu Request Body (JSON):**
 \`\`\`json
 {{REQUEST_JSON}}
 \`\`\`
 
-### 2.3. Chi tiết Dữ liệu Trả về (Response)
-{{RESPONSE_DESCRIPTION_TABLE}}
+### {{API_INDEX}}.5. Các trường dữ liệu output (Response)
+{{RESPONSE_TABLE}}
 
-**Ví dụ Response Body (JSON):**
+**Mẫu Response Body (JSON):**
 \`\`\`json
 {{RESPONSE_JSON}}
 \`\`\`
 
-### 2.4. Sơ đồ trình tự (Sequence Diagram)
-{{SEQUENCE_DIAGRAM}}
+### {{API_INDEX}}.6. Sơ đồ Sequence Diagram
+{{SEQUENCE_IMAGE}}
 
-### 2.5. Mô tả luồng xử lý chi tiết
-{{SEQUENCE_FLOW}}
+### {{API_INDEX}}.7. Mô tả luồng dựa vào sơ đồ Sequence Diagram
+{{FLOW_DESCRIPTION}}
+
+### {{API_INDEX}}.8. Exception (Xử lý ngoại lệ)
+{{EXCEPTION_DETAILS}}
 
 ---
-
-## 3. QUY CHUẨN CHUNG & MÃ LỖI
-- Mọi API đều trả về định dạng JSON.
-- Mã lỗi chuẩn: 200 (Success), 400 (Bad Request), 401 (Unauthorized), 500 (Internal Server Error).
-
-*Tài liệu này được bảo mật và thuộc quyền sở hữu của {{PROJECT_NAME}}*
+<div style="page-break-after: always;"></div>
 `;
 
 export const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
