@@ -15,6 +15,7 @@ import {
   createProjectStructure, 
   syncProjectToSheet, 
   uploadDocFile,
+  uploadRawFile,
   checkConnection
 } from './services/googleDriveService';
 import { extractDocumentText } from './services/documentService';
@@ -121,7 +122,6 @@ const App: React.FC = () => {
     // Auto sync
     const project = projects.find(p => p.id === projectId);
     if (project?.cloudConfig.autoSync) {
-      // Re-fetch project from state isn't reliable here due to async closure, so we use the local update logic
       const updatedProject = { ...project, ...updates };
       if (env.GOOGLE_ACCESS_TOKEN && updatedProject.cloudConfig.googleSheetId) {
         try {
@@ -571,7 +571,6 @@ const App: React.FC = () => {
               Object.keys(data).forEach(key => {
                 const v = data[key];
                 const name = prefix ? `${prefix}.${key}` : key;
-                // Preserve existing descriptions if field name matches
                 const existing = existingParams.find(p => p.name === name);
                 fields.push({ 
                   name, 
@@ -624,9 +623,18 @@ const App: React.FC = () => {
         if (!file || !currentProject) return;
         setIsExtracting(true);
         try {
+          // 1. Trích xuất text cho AI
           const text = await extractDocumentText(file);
-          updateProjectLocal({ template: text }, currentProject.id);
-          e.target.value = ''; // reset
+          
+          // 2. Cập nhật giao diện local & đồng bộ text sang Sheets
+          updateProjectAndCloud({ template: text }, currentProject.id);
+          
+          // 3. Tải file gốc lên Google Drive cùng thư mục với Excel
+          if (env.GOOGLE_ACCESS_TOKEN && currentProject.cloudConfig.googleDriveFolderId) {
+             await uploadRawFile(env.GOOGLE_ACCESS_TOKEN, currentProject.cloudConfig.googleDriveFolderId, file);
+          }
+          
+          e.target.value = ''; // reset input
         } catch (err: any) { handleError(err); }
         finally { setIsExtracting(false); }
       }} className="hidden" accept=".docx,.pdf,.txt,.md" />
@@ -656,16 +664,6 @@ const App: React.FC = () => {
               </div>
               <button onClick={() => setError(null)} className="p-3 hover:bg-slate-100 rounded-full transition-all text-slate-400"><X size={20} /></button>
             </div>
-            {error.isAuth && (
-              <div className="bg-slate-900 text-white p-6 rounded-3xl space-y-3">
-                 <p className="text-[10px] font-black uppercase text-amber-400 tracking-widest">Hướng dẫn khắc phục:</p>
-                 <ol className="text-[11px] font-medium opacity-80 space-y-2 list-decimal ml-4">
-                    <li>Kiểm tra file <code className="bg-white/10 px-1 rounded">.env</code></li>
-                    <li>Đảm bảo <code className="bg-white/10 px-1 rounded">VITE_GOOGLE_ACCESS_TOKEN</code> là mới nhất.</li>
-                    <li>Khởi động lại trình duyệt hoặc server nếu cần.</li>
-                 </ol>
-              </div>
-            )}
           </div>
         </div>
       )}

@@ -129,3 +129,32 @@ export const uploadDocFile = async (token: string, folderId: string, fileName: s
   
   return res.json();
 };
+
+/**
+ * Tải lên một file bất kỳ (docx, pdf, txt...) lên thư mục dự án trên Drive
+ */
+export const uploadRawFile = async (token: string, folderId: string, file: File) => {
+  const metadata = {
+    name: `TEMPLATE_${file.name}`,
+    parents: [folderId],
+  };
+
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+  form.append('file', file);
+
+  const res = await fetch(`${UPLOAD_API_BASE}/files?uploadType=multipart`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` },
+    body: form,
+    mode: 'cors'
+  });
+
+  if (res.status === 401) throw new Error('UNAUTHORIZED');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || 'File upload failed');
+  }
+  
+  return res.json();
+};
