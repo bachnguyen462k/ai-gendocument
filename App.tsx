@@ -8,7 +8,7 @@ import {
   Upload, File, Save, ExternalLink, AlertCircle, FilePlus,
   ArrowRightLeft, Code2, ClipboardList, Image as ImageIcon,
   LogIn, Globe, Key, FolderOpen, LogOut, HelpCircle, ShieldAlert, X, Terminal,
-  Cpu
+  Cpu, FileSearch, Eye, Type, Asterisk
 } from 'lucide-react';
 import { generateApiDoc } from './services/geminiService';
 import { 
@@ -28,12 +28,9 @@ const STORAGE_KEY = 'api_doc_architect_data';
 const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   
-  // Logic lấy biến môi trường thông minh (Smart Env Detection)
   const env = useMemo(() => {
-    // Thử lấy từ import.meta.env (Vite) hoặc process.env (Webpack/Generic)
     const metaEnv = (import.meta as any).env || {};
     const procEnv = (window.process as any)?.env || {};
-
     return {
       API_KEY: procEnv.API_KEY || metaEnv.VITE_API_KEY || "",
       GOOGLE_ACCESS_TOKEN: procEnv.GOOGLE_ACCESS_TOKEN || metaEnv.VITE_GOOGLE_ACCESS_TOKEN || "",
@@ -49,18 +46,6 @@ const App: React.FC = () => {
     return missing;
   }, [env]);
 
-  useEffect(() => {
-    console.group("🛠️ [System Debug: Environment Variables]");
-    console.log("Status:", missingKeys.length === 0 ? "✅ ALL KEYS LOADED" : "⚠️ MISSING KEYS DETECTED");
-    console.table({
-      'Gemini API Key': env.API_KEY ? "Found" : "Missing",
-      'Google Token': env.GOOGLE_ACCESS_TOKEN ? "Found" : "Missing",
-      'Folder ID': env.GOOGLE_DRIVE_FOLDER_ID ? "Found" : "Missing"
-    });
-    console.log("Current Raw Env (process.env):", (window.process as any)?.env);
-    console.groupEnd();
-  }, [env, missingKeys]);
-
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [currentApiId, setCurrentApiId] = useState<string | null>(null);
   const [view, setView] = useState<AppView>('dashboard');
@@ -68,6 +53,8 @@ const App: React.FC = () => {
   const [result, setResult] = useState<string>('');
   const [error, setError] = useState<{message: string, isAuth: boolean} | null>(null);
   const [showSyncSuccess, setShowSyncSuccess] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false);
   const [jsonModalType, setJsonModalType] = useState<'request' | 'response'>('request');
@@ -110,21 +97,91 @@ const App: React.FC = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProjects));
   };
 
+  const handleUpdateField = (apiId: string, type: 'input' | 'output', fieldName: string, updates: Partial<ApiField>) => {
+    if (!currentProject) return;
+    const newApis = currentProject.apis.map(api => {
+      if (api.id === apiId) {
+        const fieldKey = type === 'input' ? 'inputParams' : 'outputParams';
+        const newFields = api[fieldKey].map(f => f.name === fieldName ? { ...f, ...updates } : f);
+        return { ...api, [fieldKey]: newFields };
+      }
+      return api;
+    });
+    updateProjectAndCloud({ apis: newApis }, currentProject.id);
+  };
+
+  const renderFieldsTable = (fields: ApiField[], type: 'input' | 'output') => (
+    <div className="mt-6 border border-slate-100 rounded-3xl overflow-hidden">
+      <table className="w-full text-left border-collapse">
+        <thead className="bg-slate-50 border-b border-slate-100">
+          <tr>
+            <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest w-1/4">Tên trường</th>
+            <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest w-16 text-center">R</th>
+            <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest w-1/4">Kiểu dữ liệu</th>
+            <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">Mô tả chi tiết (Nghiệp vụ)</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-50 bg-white">
+          {fields.length === 0 ? (
+            <tr>
+              <td colSpan={4} className="px-6 py-10 text-center text-slate-300 text-xs font-bold uppercase italic">
+                Chưa có dữ liệu. Hãy nhập JSON để tự động trích xuất các trường.
+              </td>
+            </tr>
+          ) : fields.map((field) => (
+            <tr key={field.name} className="hover:bg-slate-50/50 transition-all">
+              <td className="px-6 py-4">
+                <div className="font-mono text-xs font-bold text-slate-600 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                  {field.name}
+                </div>
+              </td>
+              <td className="px-6 py-4 text-center">
+                <button 
+                  onClick={() => handleUpdateField(currentApi!.id, type, field.name, { required: !field.required })}
+                  className={`p-1 rounded-md transition-all ${field.required ? 'text-red-500 bg-red-50' : 'text-slate-200 hover:text-slate-400'}`}
+                >
+                  <Asterisk size={14} />
+                </button>
+              </td>
+              <td className="px-6 py-4">
+                <select 
+                  className="bg-transparent text-[10px] font-black uppercase border-b-2 border-transparent focus:border-blue-500 outline-none text-blue-600"
+                  value={field.type}
+                  onChange={(e) => handleUpdateField(currentApi!.id, type, field.name, { type: e.target.value })}
+                >
+                  <option value="string">STRING</option>
+                  <option value="number">NUMBER</option>
+                  <option value="boolean">BOOLEAN</option>
+                  <option value="object">OBJECT</option>
+                  <option value="array">ARRAY</option>
+                  <option value="null">NULL</option>
+                </select>
+              </td>
+              <td className="px-6 py-4">
+                <input 
+                  className="w-full bg-transparent border-b border-transparent focus:border-blue-200 outline-none text-xs font-medium placeholder:text-slate-200 py-1 transition-all"
+                  value={field.description}
+                  onChange={(e) => handleUpdateField(currentApi!.id, type, field.name, { description: e.target.value })}
+                  placeholder="Nhập ý nghĩa trường này..."
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
   const createProject = async () => {
     if (missingKeys.length > 0) {
       setError({ message: `Cần cấu hình .env: ${missingKeys.join(", ")}`, isAuth: false });
       return;
     }
-
     setStatus('syncing');
     try {
       const projectName = `Dự án ${new Date().toLocaleDateString()}`;
-      const { folderId, sheetId } = await createProjectStructure(
-        env.GOOGLE_ACCESS_TOKEN, 
-        projectName, 
-        env.GOOGLE_DRIVE_FOLDER_ID
-      );
-
+      const { folderId, sheetId } = await createProjectStructure(env.GOOGLE_ACCESS_TOKEN, projectName, env.GOOGLE_DRIVE_FOLDER_ID);
       const newProj: Project = {
         id: crypto.randomUUID(),
         name: projectName,
@@ -134,7 +191,6 @@ const App: React.FC = () => {
         updatedAt: Date.now(),
         cloudConfig: { googleDriveFolderId: folderId, googleSheetId: sheetId, autoSync: true }
       };
-
       await syncProjectToSheet(env.GOOGLE_ACCESS_TOKEN, sheetId, newProj);
       setProjects([newProj, ...projects]);
       localStorage.setItem(STORAGE_KEY, JSON.stringify([newProj, ...projects]));
@@ -151,7 +207,6 @@ const App: React.FC = () => {
       const doc = await generateApiDoc(currentProject.apis, currentProject.template);
       setResult(doc);
       setStatus('completed');
-
       if (env.GOOGLE_ACCESS_TOKEN && currentProject.cloudConfig.googleDriveFolderId) {
         await uploadDocFile(env.GOOGLE_ACCESS_TOKEN, currentProject.cloudConfig.googleDriveFolderId, `Doc_${currentProject.name}`, doc);
         setShowSyncSuccess(true);
@@ -171,11 +226,11 @@ const App: React.FC = () => {
           <div className="flex items-center gap-3">
              {missingKeys.length === 0 ? (
                <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 shadow-sm">
-                  <Globe size={16} /> <span className="text-[10px] font-black uppercase tracking-tight">Cấu hình .env hợp lệ</span>
+                  <Globe size={16} /> <span className="text-[10px] font-black uppercase tracking-tight">Cloud Sẵn sàng</span>
                </div>
              ) : (
                <div className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-700 rounded-xl border border-red-100 animate-pulse">
-                  <ShieldAlert size={16} /> <span className="text-[10px] font-black uppercase tracking-tight">THIẾU {missingKeys.length} KEY</span>
+                  <ShieldAlert size={16} /> <span className="text-[10px] font-black uppercase tracking-tight">THIẾU KEY: {missingKeys.join(", ")}</span>
                </div>
              )}
           </div>
@@ -188,55 +243,31 @@ const App: React.FC = () => {
             <div className="flex justify-between items-end">
               <div>
                 <h2 className="text-4xl font-black text-gray-900 tracking-tighter">Bảng điều khiển</h2>
-                <p className="text-slate-400 font-bold text-xs mt-1 uppercase tracking-widest">Quản lý dự án & Cloud Sync</p>
+                <p className="text-slate-400 font-bold text-xs mt-1 uppercase tracking-widest">Thiết kế & Đồng bộ tài liệu</p>
               </div>
               <button onClick={createProject} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-3xl font-black shadow-xl flex items-center gap-3 transition-all active:scale-95 disabled:opacity-50" disabled={status === 'syncing'}>
                 {status === 'syncing' ? <Loader2 size={24} className="animate-spin" /> : <Plus size={24} />} Tạo Dự án Mới
               </button>
             </div>
-
             {missingKeys.length > 0 && (
               <div className="bg-white border-2 border-red-200 p-8 rounded-[2.5rem] shadow-xl shadow-red-500/5">
                 <div className="flex flex-col md:flex-row items-start gap-6">
                   <div className="bg-red-100 p-4 rounded-3xl text-red-600"><Terminal size={32} /></div>
                   <div className="flex-1 space-y-4">
-                    <div>
-                      <h4 className="font-black text-red-900 uppercase tracking-tight">PHÁT HIỆN LỖI LOAD FILE .ENV</h4>
-                      <p className="text-sm text-red-700/80 font-medium mt-1 leading-relaxed">
-                        Ứng dụng không tìm thấy: <span className="font-black underline">{missingKeys.join(", ")}</span>.
-                        Điều này thường do cơ chế bảo mật của trình biên dịch (Vite).
-                      </p>
-                    </div>
-                    <div className="bg-slate-900 p-6 rounded-3xl text-blue-200 font-mono text-xs space-y-2 border border-blue-500/20 shadow-inner">
-                       <p className="text-slate-500 mb-2">// Hãy thử sửa file .env của bạn thành:</p>
-                       <p><span className="text-pink-400">API_KEY</span>={env.API_KEY || "AIza..."}</p>
-                       <p><span className="text-blue-400">VITE_GOOGLE_ACCESS_TOKEN</span>=ya29...</p>
-                       <p><span className="text-blue-400">VITE_GOOGLE_DRIVE_FOLDER_ID</span>=1vm...</p>
-                    </div>
-                    <p className="text-[10px] font-bold text-red-400 uppercase">* Sau khi sửa, hãy khởi động lại lệnh "npm run dev" trong terminal.</p>
+                    <h4 className="font-black text-red-900 uppercase tracking-tight">CẦN CẤU HÌNH BIẾN MÔI TRƯỜNG</h4>
+                    <p className="text-sm text-red-700/80 font-medium leading-relaxed">Để sử dụng đầy đủ tính năng, hãy thêm các key vào file <code>.env</code>.</p>
                   </div>
                 </div>
               </div>
             )}
-
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {projects.length === 0 ? (
-                <div className="col-span-full bg-white rounded-[3rem] p-20 border-4 border-dashed border-slate-100 flex flex-col items-center justify-center text-center">
-                  <Cpu size={64} className="text-slate-100 mb-6" />
-                  <h3 className="text-2xl font-black text-slate-300">Sẵn sàng khởi tạo</h3>
-                  <p className="text-slate-400 mt-2 max-w-sm font-medium leading-relaxed">Đảm bảo cấu hình .env đã chính xác để bắt đầu đồng bộ Google Cloud.</p>
+              {projects.map(p => (
+                <div key={p.id} onClick={() => { setCurrentProjectId(p.id); setView('project-detail'); }} className="group bg-white p-8 rounded-[2.5rem] border border-gray-200 shadow-sm hover:shadow-xl cursor-pointer transition-all">
+                  <div className="bg-blue-50 p-4 rounded-3xl text-blue-600 w-fit mb-6 group-hover:bg-blue-600 group-hover:text-white transition-all"><Database size={24} /></div>
+                  <h3 className="text-xl font-black text-gray-900 mb-2 truncate">{p.name}</h3>
+                  <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase tracking-tight"><Cloud size={12} /> Google Cloud Active</div>
                 </div>
-              ) : (
-                projects.map(p => (
-                  <div key={p.id} onClick={() => { setCurrentProjectId(p.id); setView('project-detail'); }} className="group bg-white p-8 rounded-[2.5rem] border border-gray-200 shadow-sm hover:shadow-xl cursor-pointer transition-all">
-                    <div className="bg-blue-50 p-4 rounded-3xl text-blue-600 w-fit mb-6 group-hover:bg-blue-600 group-hover:text-white transition-all"><Database size={24} /></div>
-                    <h3 className="text-xl font-black text-gray-900 mb-2 truncate">{p.name}</h3>
-                    <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase">
-                      <Cloud size={12} /> Google Cloud Active
-                    </div>
-                  </div>
-                ))
-              )}
+              ))}
             </div>
           </div>
         )}
@@ -249,8 +280,8 @@ const App: React.FC = () => {
                 <h2 className="text-2xl font-black">{currentProject.name}</h2>
               </div>
               <div className="flex gap-3">
-                <button onClick={handleGenerateFullDoc} disabled={status === 'processing'} className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-black text-sm flex items-center gap-2 shadow-xl shadow-slate-200">
-                  {status === 'processing' ? <Loader2 size={16} className="animate-spin" /> : <FilePlus size={16} />} GENERATE TO CLOUD
+                <button onClick={handleGenerateFullDoc} disabled={status === 'processing' || currentProject.apis.length === 0} className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-black text-sm flex items-center gap-2 shadow-xl shadow-slate-200">
+                  {status === 'processing' ? <Loader2 size={16} className="animate-spin" /> : <FilePlus size={16} />} GENERATE & SYNC
                 </button>
                 <button onClick={() => {
                   const newApi: ApiInfo = { id: crypto.randomUUID(), name: 'API mới', description: '', method: 'GET', endpoint: '/api/v1/', authType: 'Bearer', requestBody: '{}', responseBody: '{}', inputParams: [], outputParams: [] };
@@ -259,59 +290,34 @@ const App: React.FC = () => {
                 }} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black text-sm flex items-center gap-2 shadow-xl shadow-blue-200"><Plus size={16} /> Thêm API</button>
               </div>
             </div>
-
-            {showSyncSuccess && (
-              <div className="bg-emerald-500 text-white p-4 rounded-2xl font-black text-center animate-bounce shadow-xl">
-                 ĐỒNG BỘ THÀNH CÔNG VỚI GOOGLE DRIVE!
-              </div>
-            )}
-
             <div className="grid grid-cols-12 gap-8">
               <div className="col-span-8">
                 {status === 'completed' ? <MarkdownPreview content={result} /> : (
-                  <div className="bg-white rounded-[3rem] border border-slate-100 overflow-hidden shadow-sm min-h-[400px]">
+                  <div className="bg-white rounded-[3rem] border border-slate-100 overflow-hidden shadow-sm min-h-[500px]">
                     <div className="px-8 py-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
                        <span className="font-black uppercase text-[10px] text-slate-400 tracking-widest flex items-center gap-2"><Table size={14} /> Danh sách API</span>
-                       <span className="text-[10px] font-bold text-emerald-500 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100 uppercase tracking-tighter">Google Sheets Ready</span>
                     </div>
-                    {currentProject.apis.length === 0 ? (
-                      <div className="p-20 text-center flex flex-col items-center">
-                        <Code2 size={48} className="text-slate-100 mb-4" />
-                        <p className="text-slate-400 font-bold text-xs uppercase">Bắt đầu thiết kế API đầu tiên của bạn</p>
+                    {currentProject.apis.map(api => (
+                      <div key={api.id} onClick={() => { setCurrentApiId(api.id); setView('api-edit'); }} className="px-10 py-7 hover:bg-blue-50/50 cursor-pointer transition-all flex items-center gap-6 group">
+                        <div className={`px-4 py-1.5 rounded-xl font-black text-[10px] shadow-sm ${api.method === 'GET' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>{api.method}</div>
+                        <div className="flex-1">
+                           <h4 className="font-black text-slate-900">{api.name}</h4>
+                           <p className="text-xs text-slate-400 font-mono mt-1">{api.endpoint}</p>
+                        </div>
+                        <ChevronLeft size={20} className="rotate-180 text-slate-200 group-hover:text-blue-600 transition-all" />
                       </div>
-                    ) : (
-                      <div className="divide-y divide-slate-50">
-                        {currentProject.apis.map(api => (
-                          <div key={api.id} onClick={() => { setCurrentApiId(api.id); setView('api-edit'); }} className="px-10 py-7 hover:bg-blue-50/50 cursor-pointer transition-all flex items-center gap-6 group">
-                            <div className={`px-4 py-1.5 rounded-xl font-black text-[10px] shadow-sm ${
-                              api.method === 'GET' ? 'bg-emerald-100 text-emerald-700' :
-                              api.method === 'POST' ? 'bg-blue-100 text-blue-700' :
-                              'bg-slate-100 text-slate-700'
-                            }`}>{api.method}</div>
-                            <div className="flex-1">
-                               <h4 className="font-black text-slate-900">{api.name}</h4>
-                               <p className="text-xs text-slate-400 font-mono mt-1">{api.endpoint}</p>
-                            </div>
-                            <ChevronLeft size={20} className="rotate-180 text-slate-200 group-hover:text-blue-600 transition-all" />
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    ))}
                   </div>
                 )}
               </div>
-              <div className="col-span-4">
+              <div className="col-span-4 space-y-6">
                 <div className="bg-slate-900 p-8 rounded-[3rem] text-white shadow-2xl">
-                  <h3 className="text-[10px] font-black uppercase text-blue-400 mb-6 tracking-widest">Cấu hình Dự án</h3>
-                  <div className="space-y-4">
-                     <div className="bg-white/5 p-4 rounded-2xl border border-white/10">
-                        <p className="text-[10px] uppercase text-slate-500 font-black mb-1">Drive Folder ID</p>
-                        <p className="text-xs font-mono text-blue-200 truncate">{currentProject.cloudConfig.googleDriveFolderId}</p>
-                     </div>
-                     <div className="bg-white/5 p-4 rounded-2xl border border-white/10">
-                        <p className="text-[10px] uppercase text-slate-500 font-black mb-1">Sheet Sync ID</p>
-                        <p className="text-xs font-mono text-emerald-200 truncate">{currentProject.cloudConfig.googleSheetId}</p>
-                     </div>
+                  <h3 className="text-[10px] font-black uppercase text-blue-400 mb-6 tracking-widest">Mẫu Tài Liệu Hệ Thống</h3>
+                  <button onClick={() => fileInputRef.current?.click()} disabled={isExtracting} className="w-full py-4 bg-blue-600 hover:bg-blue-700 rounded-2xl font-black text-xs flex items-center justify-center gap-2 transition-all shadow-lg">
+                    {isExtracting ? <Loader2 size={18} className="animate-spin" /> : <UploadCloud size={18} />} {isExtracting ? "ĐANG XỬ LÝ..." : "TẢI LÊN FILE MẪU"}
+                  </button>
+                  <div onClick={() => setShowTemplateEditor(true)} className="mt-4 bg-white/5 p-6 rounded-2xl border border-white/10 cursor-pointer hover:bg-white/10 transition-all">
+                    <p className="text-[10px] font-mono opacity-40 leading-relaxed line-clamp-[6] whitespace-pre-wrap">{currentProject.template}</p>
                   </div>
                 </div>
               </div>
@@ -325,63 +331,77 @@ const App: React.FC = () => {
               <div className="flex items-center gap-4">
                 <button onClick={() => setView('project-detail')} className="p-2 hover:bg-slate-50 rounded-full"><ChevronLeft size={24} /></button>
                 <div className="space-y-1">
-                  <input className="text-2xl font-black outline-none bg-transparent" value={currentApi.name} onChange={e => {
+                  <input className="text-2xl font-black outline-none bg-transparent w-full" value={currentApi.name} onChange={e => {
                     const newApis = currentProject!.apis.map(a => a.id === currentApi.id ? { ...a, name: e.target.value } : a);
                     updateProjectAndCloud({ apis: newApis }, currentProject!.id);
                   }} />
                   <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
-                    <span className="font-black text-blue-600 uppercase">{currentApi.method}</span>
+                    <span className="font-black text-blue-600 uppercase tracking-tighter">{currentApi.method}</span>
+                    <span className="opacity-50 px-1">|</span>
                     <span>{currentApi.endpoint}</span>
                   </div>
                 </div>
               </div>
-              <button onClick={() => setView('project-detail')} className="bg-slate-900 text-white px-10 py-4 rounded-2xl font-black text-xs shadow-xl active:scale-95 transition-all">LƯU & QUAY LẠI</button>
+              <button onClick={() => setView('project-detail')} className="bg-slate-900 text-white px-10 py-4 rounded-2xl font-black text-xs shadow-xl active:scale-95 transition-all">LƯU & ĐÓNG</button>
             </div>
 
-            <div className="grid grid-cols-12 gap-8">
+            <div className="grid grid-cols-12 gap-8 pb-20">
                <div className="col-span-8 space-y-8">
                  <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100">
-                    <div className="flex justify-between items-center mb-10">
-                      <h3 className="font-black text-slate-900 text-lg uppercase tracking-tight">Cấu trúc Request/Response</h3>
-                      <div className="flex gap-2">
-                        <button onClick={() => { setJsonModalType('request'); setIsJsonModalOpen(true); }} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-[10px] font-black shadow-lg shadow-blue-200 flex items-center gap-2">
-                          <Code2 size={14} /> NHẬP JSON REQUEST
-                        </button>
-                        <button onClick={() => { setJsonModalType('response'); setIsJsonModalOpen(true); }} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-[10px] font-black shadow-lg shadow-emerald-200 flex items-center gap-2">
-                          <Code2 size={14} /> NHẬP JSON RESPONSE
-                        </button>
-                      </div>
+                    <div className="flex justify-between items-center mb-8">
+                      <h3 className="font-black text-slate-900 text-lg uppercase tracking-tight flex items-center gap-3">
+                        <Code2 size={24} className="text-blue-600" /> Cấu trúc Request
+                      </h3>
+                      <button onClick={() => { setJsonModalType('request'); setIsJsonModalOpen(true); }} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-[10px] font-black shadow-lg shadow-blue-200 flex items-center gap-2">
+                        <RefreshCw size={14} /> CẬP NHẬT JSON REQUEST
+                      </button>
                     </div>
-                    
-                    <div className="space-y-4">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mô tả logic xử lý API</label>
-                      <textarea 
-                        className="w-full bg-slate-50 p-6 rounded-3xl border border-transparent focus:border-blue-100 outline-none transition-all text-sm h-32"
-                        value={currentApi.description}
-                        onChange={e => {
-                           const newApis = currentProject!.apis.map(a => a.id === currentApi.id ? { ...a, description: e.target.value } : a);
-                           updateProjectAndCloud({ apis: newApis }, currentProject!.id);
-                        }}
-                        placeholder="API này dùng để xử lý logic gì?"
-                      />
+                    {renderFieldsTable(currentApi.inputParams, 'input')}
+                 </div>
+
+                 <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100">
+                    <div className="flex justify-between items-center mb-8">
+                      <h3 className="font-black text-slate-900 text-lg uppercase tracking-tight flex items-center gap-3">
+                        <Code2 size={24} className="text-emerald-600" /> Cấu trúc Response
+                      </h3>
+                      <button onClick={() => { setJsonModalType('response'); setIsJsonModalOpen(true); }} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-[10px] font-black shadow-lg shadow-emerald-200 flex items-center gap-2">
+                        <RefreshCw size={14} /> CẬP NHẬT JSON RESPONSE
+                      </button>
                     </div>
+                    {renderFieldsTable(currentApi.outputParams, 'output')}
+                 </div>
+
+                 <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100">
+                    <h3 className="font-black text-slate-900 text-lg uppercase tracking-tight mb-6">Mô tả nghiệp vụ bổ sung</h3>
+                    <textarea 
+                      className="w-full bg-slate-50 p-6 rounded-3xl border border-transparent focus:border-blue-100 outline-none transition-all text-sm h-40 leading-relaxed"
+                      value={currentApi.description}
+                      onChange={e => {
+                         const newApis = currentProject!.apis.map(a => a.id === currentApi.id ? { ...a, description: e.target.value } : a);
+                         updateProjectAndCloud({ apis: newApis }, currentProject!.id);
+                      }}
+                      placeholder="Mô tả các ràng buộc logic, cách tính toán của API này..."
+                    />
                  </div>
                </div>
-               
-               <div className="col-span-4">
-                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 space-y-6">
-                    <h3 className="font-black text-sm uppercase">Sơ đồ Sequence</h3>
+
+               <div className="col-span-4 space-y-8">
+                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100">
+                    <h3 className="font-black text-sm uppercase tracking-tight mb-6">Sequence Diagram</h3>
                     {currentApi.sequenceDiagram ? (
                        <div className="relative group">
-                         <img src={currentApi.sequenceDiagram} className="w-full rounded-2xl border" />
-                         <button onClick={() => {
-                            const newApis = currentProject!.apis.map(a => a.id === currentApi.id ? { ...a, sequenceDiagram: undefined } : a);
-                            updateProjectAndCloud({ apis: newApis }, currentProject!.id);
-                         }} className="absolute top-2 right-2 p-2 bg-red-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={16} /></button>
+                         <img src={currentApi.sequenceDiagram} className="w-full rounded-2xl border shadow-sm" />
+                         <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-all rounded-2xl flex items-center justify-center gap-2">
+                            <button onClick={() => diagramInputRef.current?.click()} className="p-3 bg-white text-slate-900 rounded-xl"><Edit3 size={18} /></button>
+                            <button onClick={() => {
+                               const newApis = currentProject!.apis.map(a => a.id === currentApi.id ? { ...a, sequenceDiagram: undefined } : a);
+                               updateProjectAndCloud({ apis: newApis }, currentProject!.id);
+                            }} className="p-3 bg-red-600 text-white rounded-xl"><Trash2 size={18} /></button>
+                         </div>
                        </div>
                     ) : (
-                       <div onClick={() => diagramInputRef.current?.click()} className="border-4 border-dashed border-slate-50 rounded-3xl p-10 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-all">
-                          <ImageIcon size={32} className="text-slate-200 mb-2" />
+                       <div onClick={() => diagramInputRef.current?.click()} className="border-4 border-dashed border-slate-50 rounded-[2rem] p-12 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-all">
+                          <ImageIcon size={40} className="text-slate-200 mb-3" />
                           <span className="text-[10px] font-black text-slate-300 uppercase">Tải lên sơ đồ</span>
                        </div>
                     )}
@@ -418,6 +438,38 @@ const App: React.FC = () => {
         }} 
       />
 
+      {/* Modal chỉnh sửa Template và File Inputs giữ nguyên như cũ... */}
+      {showTemplateEditor && currentProject && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-6 bg-slate-900/80 backdrop-blur-md animate-in fade-in duration-200">
+           <div className="bg-white w-full max-w-5xl h-[80vh] rounded-[3rem] shadow-2xl flex flex-col overflow-hidden">
+              <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between">
+                 <div className="flex items-center gap-4">
+                    <div className="bg-slate-900 p-3 rounded-2xl text-white"><FileText size={20} /></div>
+                    <div><h3 className="font-black text-lg uppercase tracking-tight">Trình chỉnh sửa Template</h3></div>
+                 </div>
+                 <button onClick={() => setShowTemplateEditor(false)} className="p-3 hover:bg-slate-100 rounded-full"><X size={24} /></button>
+              </div>
+              <div className="flex-1 p-10 overflow-hidden">
+                 <textarea className="w-full h-full p-8 bg-slate-50 rounded-[2rem] font-mono text-sm border-none outline-none resize-none" value={currentProject.template} onChange={e => updateProjectAndCloud({ template: e.target.value }, currentProject.id)} />
+              </div>
+              <div className="px-10 py-8 bg-slate-50 flex justify-end">
+                 <button onClick={() => setShowTemplateEditor(false)} className="bg-slate-900 text-white px-10 py-4 rounded-2xl font-black text-xs shadow-xl transition-all">HOÀN TẤT & LƯU</button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      <input type="file" ref={fileInputRef} onChange={async (e) => {
+        const file = e.target.files?.[0];
+        if (!file || !currentProject) return;
+        setIsExtracting(true);
+        try {
+          const text = await extractDocumentText(file);
+          updateProjectAndCloud({ template: text }, currentProject.id);
+        } catch (err: any) { handleError(err); }
+        finally { setIsExtracting(false); }
+      }} className="hidden" accept=".docx,.pdf,.txt,.md" />
+      
       <input type="file" ref={diagramInputRef} onChange={(e) => {
         const file = e.target.files?.[0];
         if (!file || !currentApiId) return;
@@ -427,25 +479,6 @@ const App: React.FC = () => {
         };
         reader.readAsDataURL(file);
       }} className="hidden" accept="image/*" />
-      
-      {error && (
-        <div className="fixed bottom-10 right-10 z-[300] animate-in slide-in-from-right-10">
-          <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-2xl border border-white/10 flex flex-col gap-6 max-w-sm">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="bg-red-600 p-3 rounded-2xl shadow-lg shadow-red-500/30">
-                  <AlertCircle size={24} />
-                </div>
-                <div>
-                  <p className="font-black uppercase text-[10px] tracking-widest text-red-500">LỖI CẤU HÌNH</p>
-                  <p className="text-sm font-bold mt-1 leading-relaxed">{error.message}</p>
-                </div>
-              </div>
-              <button onClick={() => setError(null)} className="p-2 hover:bg-white/10 rounded-full transition-all"><X size={20} /></button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
