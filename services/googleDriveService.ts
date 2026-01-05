@@ -6,6 +6,9 @@ const OAUTH_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
 let currentAccessToken = '';
 
+/**
+ * Lấy Access Token mới bằng Refresh Token
+ */
 export const refreshGoogleToken = async (clientId: string, clientSecret: string, refreshToken: string) => {
   try {
     const response = await fetch(OAUTH_TOKEN_ENDPOINT, {
@@ -31,33 +34,49 @@ export const refreshGoogleToken = async (clientId: string, clientSecret: string,
   }
 };
 
+/**
+ * Hàm fetch trung tâm xử lý Authorization và Tự động Retry
+ */
 async function gfetch(url: string, options: any = {}, env: any) {
-  const token = currentAccessToken || env.GOOGLE_ACCESS_TOKEN;
+  let token = currentAccessToken || env.GOOGLE_ACCESS_TOKEN;
   
-  if (!token && !env.GOOGLE_REFRESH_TOKEN) {
-    throw new Error('MISSING_TOKEN');
+  // Trường hợp CHƯA CÓ token nhưng CÓ Refresh Token: Chủ động refresh trước khi gọi
+  if (!token && env.GOOGLE_REFRESH_TOKEN && env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
+    console.log('Chưa có Access Token, đang lấy mới từ Refresh Token...');
+    token = await refreshGoogleToken(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET, env.GOOGLE_REFRESH_TOKEN);
   }
 
-  const headers: Record<string, string> = {
-    'Authorization': `Bearer ${token}`,
-    ...options.headers,
+  if (!token) {
+    throw new Error('MISSING_TOKEN: Vui lòng cung cấp Access Token hoặc Refresh Token trong .env');
+  }
+
+  const getHeaders = (tokenValue: string) => {
+    const h: Record<string, string> = {
+      'Authorization': `Bearer ${tokenValue}`,
+      ...options.headers,
+    };
+    if (options.body && !(options.body instanceof FormData)) {
+      h['Content-Type'] = 'application/json';
+    }
+    return h;
   };
 
-  if (options.body && !(options.body instanceof FormData)) {
-    headers['Content-Type'] = 'application/json';
-  }
-
   try {
-    let res = await fetch(url, { ...options, headers, mode: 'cors' });
+    let res = await fetch(url, { ...options, headers: getHeaders(token), mode: 'cors' });
 
-    if (res.status === 401 && env.GOOGLE_REFRESH_TOKEN && env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
+    // Nếu lỗi 401 (Unauthorized) hoặc 403 (Forbidden - đôi khi do token hết hạn)
+    if ((res.status === 401 || res.status === 403) && env.GOOGLE_REFRESH_TOKEN && env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
+      console.log(`Lỗi ${res.status}, đang thử làm mới token...`);
       const newToken = await refreshGoogleToken(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET, env.GOOGLE_REFRESH_TOKEN);
-      headers['Authorization'] = `Bearer ${newToken}`;
-      res = await fetch(url, { ...options, headers, mode: 'cors' });
+      res = await fetch(url, { ...options, headers: getHeaders(newToken), mode: 'cors' });
     }
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: { message: `HTTP Error ${res.status}` } }));
+      // Nếu sau khi refresh vẫn lỗi identity
+      if (err.error?.message?.includes('unregistered callers')) {
+        throw new Error("Lỗi xác thực Google API: Header Authorization không hợp lệ hoặc thiếu API Key.");
+      }
       throw new Error(err.error?.message || `Lỗi ${res.status}`);
     }
     
@@ -76,8 +95,8 @@ export const checkConnection = async (env: any) => {
  */
 export const listRemoteProjectFolders = async (env: any) => {
   const q = "mimeType='application/vnd.google-apps.folder' and name contains '[API_DOC]' and trashed = false";
-  const data = await gfetch(`${DRIVE_API_BASE}/files?q=${encodeURIComponent(q)}&fields=files(id, name)`, { method: 'GET' }, env);
-  return data.files || [];
+  const url = `${DRIVE_API_BASE}/files?q=${encodeURIComponent(q)}&fields=files(id, name)`;
+  return (await gfetch(url, { method: 'GET' }, env)).files || [];
 };
 
 /**
@@ -85,7 +104,8 @@ export const listRemoteProjectFolders = async (env: any) => {
  */
 export const findProjectSheetInFolder = async (env: any, folderId: string) => {
   const q = `'${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and name contains 'DB_' and trashed = false`;
-  const data = await gfetch(`${DRIVE_API_BASE}/files?q=${encodeURIComponent(q)}&fields=files(id, name)`, { method: 'GET' }, env);
+  const url = `${DRIVE_API_BASE}/files?q=${encodeURIComponent(q)}&fields=files(id, name)`;
+  const data = await gfetch(url, { method: 'GET' }, env);
   return data.files?.[0] || null;
 };
 
@@ -104,7 +124,7 @@ export const fetchProjectFromSheet = async (env: any, sheetId: string, folderId:
     name: rows[2]?.[1] || 'Dự án không tên',
     description: rows[3]?.[1] || '',
     updatedAt: new Date(rows[4]?.[1] || Date.now()).getTime(),
-    template: rows[5]?.[1] || '', // Đọc template từ hàng 6
+    template: rows[5]?.[1] || '',
     apis: [],
     cloudConfig: {
       googleDriveFolderId: folderId,
@@ -113,7 +133,6 @@ export const fetchProjectFromSheet = async (env: any, sheetId: string, folderId:
     }
   };
 
-  // Parsing APIs từ dòng 9 trở đi
   for (let i = 8; i < rows.length; i++) {
     const row = rows[i];
     if (!row || row.length < 4) continue;
@@ -164,7 +183,7 @@ export const syncProjectToSheet = async (env: any, sheetId: string, project: any
     ["Project Name", project.name],
     ["Description", project.description],
     ["Last Updated", new Date(project.updatedAt).toISOString()],
-    ["Template Content", project.template], // Lưu template vào hàng 6
+    ["Template Content", project.template],
     [],
     ["--- API DOCUMENTATION DATA ---"],
     ["ID", "Name", "Method", "Endpoint", "Description", "Auth", "Input Params (JSON)", "Output Params (JSON)"]
