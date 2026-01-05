@@ -5,6 +5,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>API Doc Architect AI</title>
+    <!-- Polyfill process.env safely -->
+    <script>
+        if (typeof window.process === 'undefined') {
+            window.process = { env: {} };
+        } else if (typeof window.process.env === 'undefined') {
+            window.process.env = {};
+        }
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
