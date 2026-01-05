@@ -1,0 +1,8 @@
+{
+  "name": "API Doc Architect AI",
+  "description": "An intelligent technical documentation generator that transforms API requests and responses into professional documentation using custom templates and Gemini AI.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
