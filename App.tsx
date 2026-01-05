@@ -27,11 +27,32 @@ const CONFIG_KEY = 'api_doc_architect_config';
 
 const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [globalConfig, setGlobalConfig] = useState<GlobalConfig>({
-    defaultGoogleDriveFolderId: '',
-    autoSaveToCloud: true,
-    accessToken: ''
+  
+  // Khởi tạo globalConfig với giá trị ưu tiên từ process.env
+  const [globalConfig, setGlobalConfig] = useState<GlobalConfig>(() => {
+    const savedConfig = localStorage.getItem(CONFIG_KEY);
+    let config: GlobalConfig = {
+      defaultGoogleDriveFolderId: 'root',
+      autoSaveToCloud: true,
+      accessToken: ''
+    };
+
+    if (savedConfig) {
+      try {
+        config = { ...config, ...JSON.parse(savedConfig) };
+      } catch (e) {
+        console.error("Error parsing config from localStorage", e);
+      }
+    }
+
+    // Ghi đè bằng biến môi trường nếu có
+    return {
+      ...config,
+      defaultGoogleDriveFolderId: (process.env as any).GOOGLE_DRIVE_FOLDER_ID || config.defaultGoogleDriveFolderId,
+      accessToken: (process.env as any).GOOGLE_ACCESS_TOKEN || config.accessToken
+    };
   });
+
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [currentApiId, setCurrentApiId] = useState<string | null>(null);
   const [view, setView] = useState<AppView>('dashboard');
@@ -52,10 +73,6 @@ const App: React.FC = () => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try { setProjects(JSON.parse(saved)); } catch (e) { console.error(e); }
-    }
-    const savedConfig = localStorage.getItem(CONFIG_KEY);
-    if (savedConfig) {
-      try { setGlobalConfig(JSON.parse(savedConfig)); } catch (e) { console.error(e); }
     }
   }, []);
 
