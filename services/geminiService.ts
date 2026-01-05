@@ -2,25 +2,13 @@
 import { GoogleGenAI } from "@google/genai";
 import { ApiInfo } from "../types";
 
+/**
+ * Generates API documentation using Gemini AI.
+ * Always uses API_KEY from environment variables as per guidelines.
+ */
 export const generateApiDoc = async (apis: ApiInfo[], templateHtml: string): Promise<string> => {
-  // Kiểm tra an toàn biến process.env tuyệt đối cho browser
-  let apiKey = "";
-  try {
-    const isProcessAvailable = typeof process !== 'undefined' && process !== null;
-    if (isProcessAvailable) {
-      // @ts-ignore
-      apiKey = process.env?.API_KEY || "";
-    }
-  } catch (e) {
-    console.error("Lỗi khi truy cập API_KEY từ môi trường", e);
-  }
-
-  // Nếu không có API_KEY, Gemini SDK sẽ báo lỗi khi call, chúng ta bọc nó lại
-  if (!apiKey) {
-    throw new Error("MISSING_API_KEY: Vui lòng cấu hình API_KEY trong file .env");
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
+  // Use the API key directly from process.env.API_KEY and use named parameter for initialization.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const apisDataString = apis.map((api, index) => `
     API #${index + 1}:
@@ -59,14 +47,16 @@ export const generateApiDoc = async (apis: ApiInfo[], templateHtml: string): Pro
   `;
 
   try {
+    // Using gemini-3-pro-preview as this is a complex technical documentation reasoning task.
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
         temperature: 0.1,
       },
     });
 
+    // Directly accessing .text property (not a method call) to extract the response.
     let docContent = response.text || "";
 
     // Thay thế các placeholder ảnh bằng dữ liệu Base64 thực tế
@@ -80,6 +70,6 @@ export const generateApiDoc = async (apis: ApiInfo[], templateHtml: string): Pro
     return docContent;
   } catch (error) {
     console.error("Gemini Error:", error);
-    throw new Error("Lỗi khi tạo tài liệu chi tiết. Hãy kiểm tra API_KEY và kết nối mạng.");
+    throw new Error("Lỗi khi tạo tài liệu chi tiết. Hãy kiểm tra kết nối mạng và đảm bảo API_KEY hợp lệ.");
   }
 };

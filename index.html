@@ -5,6 +5,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>API Doc Architect AI</title>
+    <!-- Polyfill process.env cho trình duyệt trước khi load bất kỳ module nào -->
+    <script>
+        window.process = {
+            env: {
+                API_KEY: '', // Sẽ được inject nếu dùng tool dev hoặc fallback
+                GOOGLE_ACCESS_TOKEN: '',
+                GOOGLE_DRIVE_FOLDER_ID: ''
+            }
+        };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -23,22 +33,10 @@
         body {
             font-family: 'Inter', sans-serif;
             background-color: #f8fafc;
+            margin: 0;
         }
         .code-font {
             font-family: 'Fira Code', monospace;
-        }
-        .doc-scroll::-webkit-scrollbar {
-            width: 8px;
-        }
-        .doc-scroll::-webkit-scrollbar-track {
-            background: #f1f1f1;
-        }
-        .doc-scroll::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 4px;
-        }
-        .doc-scroll::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
         }
     </style>
 <script type="importmap">
@@ -58,5 +56,7 @@
 </head>
 <body>
     <div id="root"></div>
+    <!-- QUAN TRỌNG: Thẻ này phải có để ứng dụng chạy -->
+    <script type="module" src="index.tsx"></script>
 </body>
 </html>
