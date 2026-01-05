@@ -27,31 +27,24 @@ const STORAGE_KEY = 'api_doc_architect_data';
 const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   
-  // Hệ thống chẩn đoán biến môi trường (Debug Logs)
-  useEffect(() => {
-    console.group("🔍 [Hệ thống Chẩn đoán Cấu hình]");
-    const env = (window as any).process?.env || {};
-    
-    const diagnostic = {
-      'API_KEY (Gemini)': env.API_KEY ? `✅ Đã nhận (${env.API_KEY.substring(0, 6)}...)` : "❌ TRỐNG",
-      'GOOGLE_ACCESS_TOKEN': env.GOOGLE_ACCESS_TOKEN ? `✅ Đã nhận (${env.GOOGLE_ACCESS_TOKEN.substring(0, 10)}...)` : "❌ TRỐNG",
-      'GOOGLE_DRIVE_FOLDER_ID': env.GOOGLE_DRIVE_FOLDER_ID ? `✅ Đã nhận (${env.GOOGLE_DRIVE_FOLDER_ID})` : "❌ TRỐNG"
-    };
-    
-    console.table(diagnostic);
-    console.log("Chi tiết process.env hiện tại:", env);
-    console.info("Lưu ý: Nếu bạn vừa sửa file .env, hãy khởi động lại server dev (npm run dev) để thay đổi có hiệu lực.");
-    console.groupEnd();
-  }, []);
+  // Kiểm tra biến môi trường bằng truy cập tĩnh (Static Access)
+  // Đây là cách duy nhất để bundler như Vite/Webpack inject giá trị vào
+  const envStatus = useMemo(() => ({
+    hasApiKey: !!process.env.API_KEY,
+    hasToken: !!process.env.GOOGLE_ACCESS_TOKEN,
+    hasFolderId: !!process.env.GOOGLE_DRIVE_FOLDER_ID,
+    apiKeyPreview: process.env.API_KEY ? `${process.env.API_KEY.substring(0, 6)}...` : 'N/A',
+    tokenPreview: process.env.GOOGLE_ACCESS_TOKEN ? `${process.env.GOOGLE_ACCESS_TOKEN.substring(0, 10)}...` : 'N/A'
+  }), []);
 
-  const [globalConfig] = useState<GlobalConfig>(() => {
-    const env = (window as any).process?.env || {};
-    return {
-      defaultGoogleDriveFolderId: env.GOOGLE_DRIVE_FOLDER_ID || "root",
-      autoSaveToCloud: true,
-      accessToken: env.GOOGLE_ACCESS_TOKEN || ""
-    };
-  });
+  useEffect(() => {
+    console.group("🚀 [Khởi động API Doc Architect]");
+    console.log("API_KEY Status:", envStatus.hasApiKey ? "✅ FOUND" : "❌ MISSING");
+    console.log("GOOGLE_ACCESS_TOKEN Status:", envStatus.hasToken ? "✅ FOUND" : "❌ MISSING");
+    console.log("GOOGLE_DRIVE_FOLDER_ID Status:", envStatus.hasFolderId ? "✅ FOUND" : "❌ MISSING");
+    console.log("Nếu thông tin trên báo MISSING, hãy chắc chắn bạn đã chạy lệnh khởi động lại server dev.");
+    console.groupEnd();
+  }, [envStatus]);
 
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [currentApiId, setCurrentApiId] = useState<string | null>(null);
@@ -81,12 +74,11 @@ const App: React.FC = () => {
   const currentProject = useMemo(() => projects.find(p => p.id === currentProjectId), [projects, currentProjectId]);
   const currentApi = useMemo(() => currentProject?.apis.find(a => a.id === currentApiId), [currentProject, currentApiId]);
 
-  const validateKeys = (): string[] => {
+  const getMissingKeys = (): string[] => {
     const missing = [];
-    const env = (window as any).process?.env || {};
-    if (!env.API_KEY) missing.push("API_KEY");
-    if (!env.GOOGLE_ACCESS_TOKEN) missing.push("GOOGLE_ACCESS_TOKEN");
-    if (!env.GOOGLE_DRIVE_FOLDER_ID) missing.push("GOOGLE_DRIVE_FOLDER_ID");
+    if (!process.env.API_KEY) missing.push("API_KEY");
+    if (!process.env.GOOGLE_ACCESS_TOKEN) missing.push("GOOGLE_ACCESS_TOKEN");
+    if (!process.env.GOOGLE_DRIVE_FOLDER_ID) missing.push("GOOGLE_DRIVE_FOLDER_ID");
     return missing;
   };
 
@@ -95,16 +87,9 @@ const App: React.FC = () => {
     const msg = err.message || "Đã có lỗi xảy ra";
     
     if (msg === 'UNAUTHORIZED' || msg === 'MISSING_TOKEN') {
-      const missing = validateKeys();
-      const detailedMsg = missing.length > 0 
-        ? `Lỗi: Ứng dụng không tìm thấy cấu hình ${missing.join(", ")} trong process.env.`
-        : "Token truy cập Google đã hết hạn. Hãy cập nhật lại GOOGLE_ACCESS_TOKEN.";
-      setError({ message: detailedMsg, isAuth: true });
-    } else if (msg.includes('Failed to fetch') || msg.includes('CORS')) {
       setError({ 
-        message: "Lỗi CORS: Hãy đảm bảo domain localhost đã được thêm vào Authorized Origins trong Google Cloud Console.", 
-        isAuth: false,
-        isCors: true 
+        message: "Lỗi xác thực: GOOGLE_ACCESS_TOKEN không hợp lệ hoặc đã hết hạn. Vui lòng lấy token mới.", 
+        isAuth: true 
       });
     } else {
       setError({ message: msg, isAuth: false });
@@ -116,9 +101,9 @@ const App: React.FC = () => {
     const updatedProjects = projects.map(p => {
       if (p.id === projectId) {
         const updated = { ...p, ...updates, updatedAt: Date.now() };
-        const env = (window as any).process?.env || {};
-        if (env.GOOGLE_ACCESS_TOKEN && updated.cloudConfig.googleSheetId) {
-          syncProjectToSheet(env.GOOGLE_ACCESS_TOKEN, updated.cloudConfig.googleSheetId, updated)
+        // Sử dụng token trực tiếp từ biến tĩnh
+        if (process.env.GOOGLE_ACCESS_TOKEN && updated.cloudConfig.googleSheetId) {
+          syncProjectToSheet(process.env.GOOGLE_ACCESS_TOKEN, updated.cloudConfig.googleSheetId, updated)
             .catch(handleError);
         }
         return updated;
@@ -130,10 +115,10 @@ const App: React.FC = () => {
   };
 
   const createProject = async () => {
-    const missing = validateKeys();
+    const missing = getMissingKeys();
     if (missing.length > 0) {
       setError({ 
-        message: `Không thể tạo dự án: Thiếu cấu hình ${missing.join(", ")}. Hãy kiểm tra file .env.`, 
+        message: `Vui lòng cấu hình các biến sau trong .env: ${missing.join(", ")}`, 
         isAuth: true 
       });
       return;
@@ -141,18 +126,17 @@ const App: React.FC = () => {
 
     setStatus('syncing');
     try {
-      const env = (window as any).process?.env || {};
       const projectName = `Dự án ${new Date().toLocaleDateString()}`;
       const { folderId, sheetId } = await createProjectStructure(
-        env.GOOGLE_ACCESS_TOKEN || "", 
+        process.env.GOOGLE_ACCESS_TOKEN || "", 
         projectName, 
-        env.GOOGLE_DRIVE_FOLDER_ID || 'root'
+        process.env.GOOGLE_DRIVE_FOLDER_ID || 'root'
       );
 
       const newProj: Project = {
         id: crypto.randomUUID(),
         name: projectName,
-        description: 'Tài liệu API lưu trữ Cloud',
+        description: 'Tài liệu đồng bộ Google Cloud',
         template: DEFAULT_TEMPLATE,
         apis: [],
         updatedAt: Date.now(),
@@ -163,7 +147,7 @@ const App: React.FC = () => {
         }
       };
 
-      await syncProjectToSheet(env.GOOGLE_ACCESS_TOKEN || "", sheetId, newProj);
+      await syncProjectToSheet(process.env.GOOGLE_ACCESS_TOKEN || "", sheetId, newProj);
       const newProjectsList = [newProj, ...projects];
       setProjects(newProjectsList);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newProjectsList));
@@ -176,9 +160,8 @@ const App: React.FC = () => {
   };
 
   const handleGenerateFullDoc = async () => {
-    const env = (window as any).process?.env || {};
-    if (!env.API_KEY) {
-      setError({ message: "Thiếu API_KEY của Gemini. Hãy kiểm tra lại cấu hình .env", isAuth: true });
+    if (!process.env.API_KEY) {
+      setError({ message: "Thiếu API_KEY của Gemini trong cấu hình.", isAuth: true });
       return;
     }
 
@@ -189,9 +172,9 @@ const App: React.FC = () => {
       setResult(doc);
       setStatus('completed');
 
-      if (env.GOOGLE_ACCESS_TOKEN && currentProject.cloudConfig.googleDriveFolderId) {
+      if (process.env.GOOGLE_ACCESS_TOKEN && currentProject.cloudConfig.googleDriveFolderId) {
         await uploadDocFile(
-          env.GOOGLE_ACCESS_TOKEN,
+          process.env.GOOGLE_ACCESS_TOKEN,
           currentProject.cloudConfig.googleDriveFolderId,
           `Doc_${currentProject.name}_${Date.now()}`,
           doc
@@ -204,7 +187,7 @@ const App: React.FC = () => {
     }
   };
 
-  const missingKeys = validateKeys();
+  const missingKeys = getMissingKeys();
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
@@ -217,11 +200,11 @@ const App: React.FC = () => {
           <div className="flex items-center gap-3">
              {missingKeys.length === 0 ? (
                <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 shadow-sm">
-                  <Globe size={16} /> <span className="text-[10px] font-black uppercase tracking-tight">Cấu hình .env đầy đủ</span>
+                  <Globe size={16} /> <span className="text-[10px] font-black uppercase tracking-tight">Cấu hình .env thành công</span>
                </div>
              ) : (
-               <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-700 rounded-xl border border-amber-100 animate-pulse">
-                  <Terminal size={16} /> <span className="text-[10px] font-black uppercase tracking-tight">Thiếu: {missingKeys.join(", ")}</span>
+               <div className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-700 rounded-xl border border-red-100 animate-pulse">
+                  <ShieldAlert size={16} /> <span className="text-[10px] font-black uppercase tracking-tight">LỖI KEY: THIẾU {missingKeys.join(", ")}</span>
                </div>
              )}
           </div>
@@ -242,15 +225,15 @@ const App: React.FC = () => {
             </div>
 
             {missingKeys.length > 0 && (
-              <div className="bg-white border-2 border-amber-200 p-8 rounded-[2.5rem] shadow-lg shadow-amber-500/5 flex flex-col md:flex-row items-center gap-6">
-                <div className="bg-amber-100 p-4 rounded-3xl text-amber-600">
-                  <ShieldAlert size={32} />
+              <div className="bg-red-50 border-2 border-red-200 p-8 rounded-[2.5rem] shadow-lg shadow-red-500/5 flex flex-col md:flex-row items-center gap-6">
+                <div className="bg-red-100 p-4 rounded-3xl text-red-600">
+                  <Terminal size={32} />
                 </div>
                 <div className="flex-1 text-center md:text-left">
-                  <h4 className="font-black text-amber-900 uppercase tracking-tight">Cảnh báo: Không tìm thấy biến môi trường</h4>
-                  <p className="text-sm text-amber-700/80 font-medium mt-1">
-                    Ứng dụng không thể đọc được: <span className="font-black underline">{missingKeys.join(", ")}</span>.
-                    Hãy đảm bảo bạn đã lưu file <code className="bg-amber-200/50 px-2 py-0.5 rounded">.env</code> và khởi động lại trình duyệt/server.
+                  <h4 className="font-black text-red-900 uppercase tracking-tight">CHƯA LOAD ĐƯỢC CẤU HÌNH .ENV</h4>
+                  <p className="text-sm text-red-700/80 font-medium mt-1">
+                    Hãy đảm bảo tên biến trong file <code className="bg-red-200/50 px-2 py-0.5 rounded">.env</code> khớp hoàn toàn với danh sách: {missingKeys.join(", ")}.
+                    Sau khi sửa file, bạn **BẮT BUỘC** phải khởi động lại server dev trong Terminal.
                   </p>
                 </div>
               </div>
@@ -260,7 +243,7 @@ const App: React.FC = () => {
               <div className="bg-white rounded-[3rem] p-20 border-4 border-dashed border-slate-100 flex flex-col items-center justify-center text-center">
                 <Database size={64} className="text-slate-100 mb-6" />
                 <h3 className="text-2xl font-black text-slate-300">Chưa có dự án nào</h3>
-                <p className="text-slate-400 mt-2 max-w-sm font-medium leading-relaxed">Mọi thay đổi sẽ được đồng bộ trực tiếp với Google Drive và Sheets của bạn.</p>
+                <p className="text-slate-400 mt-2 max-w-sm font-medium leading-relaxed">Sẵn sàng tạo tài liệu API chuyên nghiệp và đồng bộ tự động lên Cloud.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -269,7 +252,7 @@ const App: React.FC = () => {
                     <div className="bg-blue-50 p-4 rounded-3xl text-blue-600 w-fit mb-6 group-hover:bg-blue-600 group-hover:text-white transition-all"><Database size={24} /></div>
                     <h3 className="text-xl font-black text-gray-900 mb-2 truncate">{p.name}</h3>
                     <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase">
-                      <Table size={12} /> Live Sync Active
+                      <Table size={12} /> Google Cloud Active
                     </div>
                   </div>
                 ))}
@@ -300,7 +283,7 @@ const App: React.FC = () => {
 
             {showSyncSuccess && (
               <div className="bg-emerald-500 text-white p-4 rounded-2xl font-black text-center animate-bounce shadow-xl">
-                 ĐÃ LƯU TÀI LIỆU VÀO GOOGLE DRIVE THÀNH CÔNG!
+                 ĐỒNG BỘ THÀNH CÔNG VỚI GOOGLE DRIVE!
               </div>
             )}
 
@@ -309,13 +292,13 @@ const App: React.FC = () => {
                 {status === 'completed' ? <MarkdownPreview content={result} /> : (
                   <div className="bg-white rounded-[3rem] border border-slate-100 overflow-hidden shadow-sm min-h-[400px]">
                     <div className="px-8 py-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
-                       <span className="font-black uppercase text-[10px] text-slate-400 tracking-widest flex items-center gap-2"><Table size={14} /> Danh sách API</span>
-                       <span className="text-[10px] font-bold text-emerald-500 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">Syncing with Sheet</span>
+                       <span className="font-black uppercase text-[10px] text-slate-400 tracking-widest flex items-center gap-2"><Table size={14} /> Dữ liệu từ Google Sheets</span>
+                       <span className="text-[10px] font-bold text-emerald-500 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">Syncing...</span>
                     </div>
                     {currentProject.apis.length === 0 ? (
                       <div className="p-20 text-center flex flex-col items-center">
                         <Code2 size={48} className="text-slate-100 mb-4" />
-                        <p className="text-slate-400 font-bold text-xs uppercase">Chưa có API nào. Hãy bắt đầu bằng nút "Thêm API"</p>
+                        <p className="text-slate-400 font-bold text-xs uppercase">Bắt đầu thiết kế API đầu tiên của bạn</p>
                       </div>
                     ) : (
                       <div className="divide-y divide-slate-50">
@@ -490,7 +473,7 @@ const App: React.FC = () => {
                 </div>
                 <div>
                   <p className="font-black uppercase text-[10px] tracking-widest text-red-500">
-                    LỖI HỆ THỐNG
+                    LỖI CẤU HÌNH .ENV
                   </p>
                   <p className="text-sm font-bold mt-1 leading-relaxed">{error.message}</p>
                 </div>
