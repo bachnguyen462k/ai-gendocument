@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Download, FileText, CheckCircle, FileCode } from 'lucide-react';
+import { Download, FileText, CheckCircle } from 'lucide-react';
 import { marked } from 'marked';
 
 interface Props {
@@ -8,48 +8,44 @@ interface Props {
   projectName?: string;
 }
 
-const MarkdownPreview: React.FC<Props> = ({ content, projectName = 'API_Documentation' }) => {
+const MarkdownPreview: React.FC<Props> = ({ content, projectName = 'API_Doc' }) => {
   const downloadDocx = () => {
-    // Chuyển đổi Markdown sang HTML
     const htmlContent = marked.parse(content);
     
-    // Tạo cấu trúc file HTML mà Microsoft Word có thể nhận diện tốt nhất
+    // Header đặc biệt để Microsoft Word hiểu định dạng trang và bảng
     const header = `
       <html xmlns:o='urn:schemas-microsoft-com:office:office' 
             xmlns:w='urn:schemas-microsoft-com:office:word' 
             xmlns='http://www.w3.org/TR/REC-html40'>
       <head>
         <meta charset='utf-8'>
-        <title>${projectName}</title>
         <style>
-          body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; }
-          h1 { color: #1e40af; border-bottom: 2px solid #1e40af; padding-bottom: 10px; }
-          h2 { color: #1e3a8a; margin-top: 25px; border-bottom: 1px solid #e2e8f0; }
-          h3 { color: #334155; }
-          table { border-collapse: collapse; width: 100%; margin: 20px 0; }
-          th, td { border: 1px solid #cbd5e1; padding: 12px; text-align: left; }
-          th { background-color: #f8fafc; font-weight: bold; }
-          code { background-color: #f1f5f9; padding: 2px 4px; border-radius: 4px; font-family: Consolas, monospace; }
-          pre { background-color: #1e293b; color: #f8fafc; padding: 15px; border-radius: 8px; overflow-x: auto; }
-          img { max-width: 100%; height: auto; display: block; margin: 20px 0; }
-          .footer { font-size: 10px; color: #94a3b8; margin-top: 50px; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+          @page { size: 21cm 29.7cm; margin: 2cm; }
+          body { font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.5; color: #333; }
+          h1 { color: #1a365d; font-size: 24pt; text-align: center; border-bottom: 2px solid #1a365d; margin-bottom: 20px; }
+          h2 { color: #2c5282; font-size: 18pt; margin-top: 30px; border-left: 5px solid #2c5282; padding-left: 10px; }
+          h3 { color: #4a5568; font-size: 14pt; margin-top: 20px; text-decoration: underline; }
+          table { border-collapse: collapse; width: 100%; margin: 20px 0; border: 1px solid #000; }
+          th { background-color: #edf2f7; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; }
+          td { border: 1px solid #000; padding: 8px; vertical-align: top; }
+          pre { background-color: #f7fafc; border: 1px solid #e2e8f0; padding: 10px; font-family: Consolas, monospace; font-size: 10pt; }
+          code { font-family: Consolas, monospace; background: #eee; padding: 2px; }
+          img { display: block; margin: 20px auto; max-width: 100%; border: 1px solid #ddd; }
+          .footer { font-size: 9pt; color: #718096; text-align: center; margin-top: 50px; }
         </style>
       </head>
       <body>
         ${htmlContent}
-        <div class="footer">Tài liệu được tạo tự động bởi API Doc Architect AI</div>
+        <p class="footer">Tài liệu được khởi tạo bởi API Doc Architect AI</p>
       </body>
       </html>
     `;
 
-    const blob = new Blob(['\ufeff', header], {
-      type: 'application/msword'
-    });
-    
+    const blob = new Blob(['\ufeff', header], { type: 'application/msword' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${projectName}_Technical_Doc.docx`;
+    link.download = `${projectName}_API_Specification.docx`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -57,21 +53,25 @@ const MarkdownPreview: React.FC<Props> = ({ content, projectName = 'API_Document
   };
 
   return (
-    <div className="bg-white rounded-[3rem] border border-slate-100 overflow-hidden shadow-sm min-h-[600px] flex flex-col">
-      <div className="px-10 py-8 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
-        <span className="font-black uppercase text-[10px] text-slate-400 tracking-widest flex items-center gap-2">
-          <FileText size={16} /> Xem trước tài liệu kỹ thuật
-        </span>
+    <div className="bg-white rounded-[3rem] border border-slate-100 overflow-hidden shadow-2xl flex flex-col min-h-[700px]">
+      <div className="px-10 py-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
+        <div className="flex items-center gap-3">
+          <div className="bg-blue-600 p-2 rounded-lg text-white"><FileText size={18} /></div>
+          <span className="font-black uppercase text-xs text-slate-500 tracking-widest">Xem trước tài liệu kỹ thuật</span>
+        </div>
         <button 
           onClick={downloadDocx}
-          className="flex items-center gap-2 bg-blue-600 text-white font-bold text-xs hover:bg-blue-700 px-6 py-3 rounded-xl shadow-lg transition-all active:scale-95"
+          className="flex items-center gap-2 bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest hover:bg-black px-8 py-4 rounded-2xl shadow-xl transition-all active:scale-95"
         >
-          <Download size={14} /> TẢI XUỐNG FILE .DOCX
+          <Download size={14} /> TẢI FILE .DOCX
         </button>
       </div>
-      <div className="flex-1 p-12 overflow-auto doc-scroll bg-white">
+      <div className="flex-1 p-16 overflow-auto doc-scroll bg-white">
         <div 
-          className="prose prose-slate max-w-none prose-headings:font-black prose-headings:tracking-tighter prose-img:rounded-3xl prose-img:shadow-lg prose-table:border prose-table:rounded-xl"
+          className="prose prose-slate max-w-none 
+            prose-headings:text-slate-900 prose-headings:font-black
+            prose-table:border prose-table:border-slate-200 prose-th:bg-slate-50 prose-th:p-4 prose-td:p-4
+            prose-img:rounded-3xl prose-img:mx-auto prose-img:shadow-2xl"
           dangerouslySetInnerHTML={{ __html: marked.parse(content) }}
         />
       </div>

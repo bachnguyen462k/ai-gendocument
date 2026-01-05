@@ -137,16 +137,6 @@ const App: React.FC = () => {
     finally { setIsScanning(false); }
   };
 
-  const triggerSync = async (projectId: string) => {
-    const projectToSync = projects.find(p => p.id === projectId);
-    if (!projectToSync || !projectToSync.cloudConfig.googleSheetId) return;
-    setSyncStatus('pending');
-    try {
-      await syncProjectToSheet(env, projectToSync.cloudConfig.googleSheetId, projectToSync);
-      setSyncStatus('synced');
-    } catch (err: any) { handleError(err); }
-  };
-
   const updateProjectAndCloud = async (updates: Partial<Project>, projectId: string) => {
     updateProjectLocal(updates, projectId);
     setProjects(currentProjects => {
@@ -188,14 +178,14 @@ const App: React.FC = () => {
           {fields.length === 0 ? (
             <tr>
               <td colSpan={4} className="px-6 py-12 text-center text-slate-300 text-xs font-bold uppercase italic">
-                Chưa có dữ liệu. Hãy dán JSON mẫu vào Request/Response Payload.
+                Hãy dán JSON mẫu để tạo bảng mô tả tham số.
               </td>
             </tr>
           ) : fields.map((field) => (
             <tr key={field.name} className="hover:bg-blue-50/20 transition-all group">
               <td className="px-6 py-4">
                 <div className="font-mono text-xs font-bold text-slate-600 flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]"></div>
+                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
                   {field.name}
                 </div>
               </td>
@@ -214,10 +204,10 @@ const App: React.FC = () => {
               </td>
               <td className="px-6 py-4">
                 <input 
-                  className="w-full bg-slate-50/50 group-hover:bg-white px-3 py-2 rounded-xl border border-transparent focus:border-blue-200 focus:bg-white outline-none text-xs font-medium transition-all shadow-inner"
+                  className="w-full bg-slate-50/50 group-hover:bg-white px-3 py-2 rounded-xl border border-transparent focus:border-blue-200 focus:bg-white outline-none text-xs font-medium transition-all"
                   value={field.description}
                   onChange={(e) => handleUpdateField(currentApi!.id, type, field.name, { description: e.target.value })}
-                  placeholder="Ví dụ: Mã định danh duy nhất của người dùng..."
+                  placeholder="Mô tả ý nghĩa trường dữ liệu..."
                 />
               </td>
             </tr>
@@ -231,12 +221,12 @@ const App: React.FC = () => {
     if (missingKeys.length > 0) return;
     setStatus('syncing');
     try {
-      const projectName = `Dự án ${new Date().toLocaleDateString()}`;
+      const projectName = prompt("Nhập tên dự án / Hệ thống:") || `Dự án ${new Date().toLocaleDateString()}`;
       const { folderId, sheetId } = await createProjectStructure(env, projectName, env.GOOGLE_DRIVE_FOLDER_ID);
       const newProj: Project = {
         id: crypto.randomUUID(),
         name: projectName,
-        description: 'Tài liệu đồng bộ Google Cloud',
+        description: 'Tài liệu API đặc tả kỹ thuật',
         template: DEFAULT_TEMPLATE,
         apis: [],
         updatedAt: Date.now(),
@@ -259,11 +249,12 @@ const App: React.FC = () => {
     if (!currentProject) return;
     setStatus('processing');
     try {
-      const doc = await generateApiDoc(currentProject.apis, currentProject.template);
+      const doc = await generateApiDoc(currentProject.apis, currentProject.template, currentProject.name);
       setResult(doc);
       setStatus('completed');
       if (currentProject.cloudConfig.googleDriveFolderId) {
-        await uploadDocFile(env, currentProject.cloudConfig.googleDriveFolderId, `Doc_${currentProject.name}_${Date.now()}`, doc);
+        // Upload file docx lên Drive (chúng ta giả lập docx bằng HTML format word)
+        await uploadDocFile(env, currentProject.cloudConfig.googleDriveFolderId, `DOCX_${currentProject.name}`, doc);
         setShowSyncSuccess(true);
         setTimeout(() => setShowSyncSuccess(false), 3000);
       }
@@ -274,7 +265,7 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-100 selection:text-blue-900">
       <header className="bg-white/80 backdrop-blur-xl border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 h-18 flex items-center justify-between py-4">
-          <div className="flex items-center gap-3 cursor-pointer group" onClick={() => setView('dashboard')}>
+          <div className="flex items-center gap-3 cursor-pointer group" onClick={() => { setResult(''); setView('dashboard'); }}>
             <div className="bg-blue-600 p-2.5 rounded-2xl text-white shadow-lg group-hover:rotate-12 transition-all"><Zap size={22} /></div>
             <h1 className="text-xl font-black tracking-tighter uppercase">API Doc <span className="text-blue-600">Architect</span></h1>
           </div>
@@ -289,10 +280,6 @@ const App: React.FC = () => {
                  {syncStatus === 'synced' ? 'Cloud Synced' : syncStatus === 'pending' ? 'Syncing...' : 'Sync Failed'}
                </div>
              )}
-             <div className="flex items-center gap-2 px-4 py-2 rounded-xl border shadow-sm bg-slate-50 text-slate-700 border-slate-100">
-                <CheckCircle size={16} />
-                <span className="text-[10px] font-black uppercase tracking-tight">Active Session</span>
-             </div>
           </div>
         </div>
       </header>
@@ -302,31 +289,26 @@ const App: React.FC = () => {
           <div className="space-y-8 animate-in fade-in duration-500">
             <div className="flex justify-between items-end">
               <div>
-                <h2 className="text-4xl font-black text-gray-900 tracking-tighter">Chào mừng quay lại</h2>
-                <p className="text-slate-400 font-bold text-xs mt-1 uppercase tracking-widest">Hệ thống thiết kế API đặc tả thông minh</p>
+                <h2 className="text-4xl font-black text-gray-900 tracking-tighter">API Workspace</h2>
+                <p className="text-slate-400 font-bold text-xs mt-1 uppercase tracking-widest">Hệ thống tạo tài liệu kỹ thuật API thông minh</p>
               </div>
               <div className="flex gap-4">
                 <button onClick={handleScanCloud} disabled={isScanning} className="bg-white border border-slate-200 hover:border-blue-500 hover:text-blue-600 text-slate-600 px-6 py-4 rounded-3xl font-black shadow-sm flex items-center gap-3 transition-all active:scale-95 disabled:opacity-50">
-                  {isScanning ? <Loader2 size={24} className="animate-spin" /> : <Search size={24} />} QUÉT CLOUD
+                  {isScanning ? <Loader2 size={24} className="animate-spin" /> : <Search size={24} />} QUÉT DỮ LIỆU CLOUD
                 </button>
                 <button onClick={createProject} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-3xl font-black shadow-xl flex items-center gap-3 transition-all active:scale-95 disabled:opacity-50" disabled={status === 'syncing'}>
-                  {status === 'syncing' ? <Loader2 size={24} className="animate-spin" /> : <Plus size={24} />} Tạo Dự án Mới
+                  {status === 'syncing' ? <Loader2 size={24} className="animate-spin" /> : <Plus size={24} />} Dự án mới
                 </button>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {projects.length === 0 ? (
-                <div className="col-span-full py-32 text-center flex flex-col items-center justify-center bg-white rounded-[3rem] border-4 border-dashed border-slate-100">
-                  <div className="p-8 bg-slate-50 rounded-[2.5rem] text-slate-200 mb-6"><Database size={64} /></div>
-                  <h3 className="text-2xl font-black text-slate-300">Chưa có dự án nào</h3>
-                </div>
-              ) : projects.map(p => (
+              {projects.map(p => (
                 <div key={p.id} onClick={() => { setCurrentProjectId(p.id); setView('project-detail'); }} className="group bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:-translate-y-1 cursor-pointer transition-all duration-300">
                   <div className="bg-blue-50 p-5 rounded-[2rem] text-blue-600 w-fit mb-8 group-hover:bg-blue-600 group-hover:text-white transition-all duration-300"><Database size={32} /></div>
                   <h3 className="text-2xl font-black text-gray-900 mb-3 truncate tracking-tight">{p.name}</h3>
                   <div className="flex items-center justify-between pt-6 border-t border-slate-50 text-[10px] font-black uppercase tracking-tight">
-                    <div className="text-emerald-500 flex items-center gap-2"><Cloud size={14} /> Cloud Active</div>
-                    <span className="text-slate-300">{p.apis.length} APIs</span>
+                    <div className="text-emerald-500 flex items-center gap-2"><Cloud size={14} /> Cloud Ready</div>
+                    <span className="text-slate-300">{p.apis.length} Endpoints</span>
                   </div>
                 </div>
               ))}
@@ -346,7 +328,7 @@ const App: React.FC = () => {
                   {status === 'processing' ? <Loader2 size={18} className="animate-spin" /> : <FilePlus size={18} />} XUẤT FILE .DOCX
                 </button>
                 <button onClick={() => {
-                  const newApi: ApiInfo = { id: crypto.randomUUID(), name: 'API mới', description: '', method: 'GET', endpoint: '/api/v1/', authType: 'Bearer', requestBody: '{}', responseBody: '{}', inputParams: [], outputParams: [] };
+                  const newApi: ApiInfo = { id: crypto.randomUUID(), name: 'API mới', description: '', method: 'POST', endpoint: '/api/v1/resource', authType: 'Bearer Token', requestBody: '{}', responseBody: '{}', inputParams: [], outputParams: [] };
                   updateProjectAndCloud({ apis: [...currentProject.apis, newApi] }, currentProject.id);
                   setCurrentApiId(newApi.id); setView('api-edit');
                 }} className="bg-blue-600 text-white px-8 py-4 rounded-[1.5rem] font-black text-sm flex items-center gap-3 shadow-2xl hover:bg-blue-700 transition-all"><Plus size={18} /> THÊM API</button>
@@ -358,7 +340,7 @@ const App: React.FC = () => {
                 {status === 'completed' ? <MarkdownPreview content={result} projectName={currentProject.name} /> : (
                   <div className="bg-white rounded-[3rem] border border-slate-100 overflow-hidden shadow-sm min-h-[600px] flex flex-col">
                     <div className="px-10 py-8 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
-                       <span className="font-black uppercase text-[10px] text-slate-400 tracking-widest flex items-center gap-2"><Table size={16} /> Danh mục API</span>
+                       <span className="font-black uppercase text-[10px] text-slate-400 tracking-widest flex items-center gap-2"><Table size={16} /> Danh sách API kỹ thuật</span>
                     </div>
                     <div className="flex-1 divide-y divide-slate-50 overflow-auto">
                       {currentProject.apis.map(api => (
@@ -376,13 +358,14 @@ const App: React.FC = () => {
                 )}
               </div>
               <div className="col-span-4 space-y-8">
-                <div className="bg-slate-900 p-10 rounded-[3.5rem] text-white shadow-2xl overflow-hidden">
-                  <h3 className="text-[10px] font-black uppercase text-blue-400 mb-8 tracking-widest flex items-center gap-2"><Layers size={14} /> Tài liệu mẫu (Template)</h3>
+                <div className="bg-slate-900 p-10 rounded-[3.5rem] text-white shadow-2xl">
+                  <h3 className="text-[10px] font-black uppercase text-blue-400 mb-6 tracking-widest flex items-center gap-2"><Layers size={14} /> Mẫu tài liệu gốc</h3>
+                  <p className="text-xs text-slate-400 mb-6">Tải lên file mẫu công ty (.docx) hoặc chỉnh sửa cấu hình Markdown bên dưới.</p>
                   <button onClick={() => fileInputRef.current?.click()} className="w-full py-5 bg-blue-600 hover:bg-blue-700 rounded-2xl font-black text-xs flex items-center justify-center gap-3 mb-6 transition-all">
-                    {isExtracting ? <Loader2 size={20} className="animate-spin" /> : <UploadCloud size={20} />} Tải lên .DOCX/.PDF
+                    {isExtracting ? <Loader2 size={20} className="animate-spin" /> : <UploadCloud size={20} />} Cập nhật Template
                   </button>
                   <div className="bg-white/5 p-6 rounded-3xl border border-white/10 cursor-pointer hover:bg-white/10" onClick={() => setShowTemplateEditor(true)}>
-                    <p className="text-[10px] font-mono opacity-40 line-clamp-6">{currentProject.template}</p>
+                    <p className="text-[10px] font-mono opacity-40 line-clamp-6 text-white">{currentProject.template}</p>
                   </div>
                 </div>
               </div>
@@ -396,12 +379,12 @@ const App: React.FC = () => {
               <div className="flex items-center gap-6">
                 <button onClick={() => setView('project-detail')} className="p-4 hover:bg-slate-50 rounded-2xl transition-all"><ChevronLeft size={28} /></button>
                 <div className="space-y-1">
-                  <input className="text-3xl font-black outline-none bg-transparent w-full tracking-tighter" value={currentApi.name} onChange={e => {
+                  <input className="text-3xl font-black outline-none bg-transparent w-full tracking-tighter" placeholder="Tên API..." value={currentApi.name} onChange={e => {
                     const newApis = currentProject!.apis.map(a => a.id === currentApi.id ? { ...a, name: e.target.value } : a);
                     updateProjectLocal({ apis: newApis }, currentProject!.id);
                   }} />
                   <div className="flex items-center gap-3 text-xs text-slate-400 font-mono font-bold uppercase tracking-widest">
-                    <select className="bg-transparent text-blue-600 outline-none" value={currentApi.method} onChange={e => {
+                    <select className="bg-transparent text-blue-600 outline-none font-black" value={currentApi.method} onChange={e => {
                       const newApis = currentProject!.apis.map(a => a.id === currentApi.id ? { ...a, method: e.target.value } : a);
                       updateProjectLocal({ apis: newApis }, currentProject!.id);
                     }}>
@@ -414,53 +397,60 @@ const App: React.FC = () => {
                   </div>
                 </div>
               </div>
-              <button onClick={() => setView('project-detail')} className="bg-slate-900 text-white px-12 py-5 rounded-[1.5rem] font-black text-xs hover:bg-black transition-all">LƯU & QUAY LẠI</button>
+              <button onClick={() => setView('project-detail')} className="bg-slate-900 text-white px-12 py-5 rounded-[1.5rem] font-black text-xs hover:bg-black transition-all shadow-xl">HOÀN TẤT & LƯU</button>
             </div>
 
             <div className="grid grid-cols-12 gap-10">
                <div className="col-span-8 space-y-10 pb-20">
                  <div className="bg-white p-12 rounded-[3.5rem] shadow-sm border border-slate-100">
-                    <div className="flex justify-between items-center mb-10">
-                      <div className="flex items-center gap-4">
-                         <div className="p-4 bg-blue-50 text-blue-600 rounded-[1.5rem]"><Code2 size={28} /></div>
-                         <h3 className="font-black text-slate-900 text-xl uppercase tracking-tight">Request Payload</h3>
+                    <h3 className="font-black text-slate-900 text-xl uppercase tracking-tight mb-8">2. Mô tả chi tiết API</h3>
+                    <textarea 
+                      className="w-full h-32 p-6 bg-slate-50 rounded-3xl border-transparent focus:border-blue-200 outline-none text-sm"
+                      placeholder="Nhập mô tả nghiệp vụ của API này..."
+                      value={currentApi.description}
+                      onChange={e => {
+                         const newApis = currentProject!.apis.map(a => a.id === currentApi.id ? { ...a, description: e.target.value } : a);
+                         updateProjectLocal({ apis: newApis }, currentProject!.id);
+                      }}
+                    />
+                    
+                    <div className="mt-12">
+                      <div className="flex justify-between items-center mb-6">
+                         <div className="flex items-center gap-3"><Code2 className="text-blue-600" size={24} /><h4 className="font-black text-sm uppercase">Cấu trúc Request</h4></div>
+                         <button onClick={() => { setJsonModalType('request'); setIsJsonModalOpen(true); }} className="bg-blue-600 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase shadow-lg">Import JSON</button>
                       </div>
-                      <button onClick={() => { setJsonModalType('request'); setIsJsonModalOpen(true); }} className="bg-blue-600 text-white px-8 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest">Dán JSON Mẫu</button>
+                      {renderFieldsTable(currentApi.inputParams, 'input')}
                     </div>
-                    {renderFieldsTable(currentApi.inputParams, 'input')}
-                 </div>
 
-                 <div className="bg-white p-12 rounded-[3.5rem] shadow-sm border border-slate-100">
-                    <div className="flex justify-between items-center mb-10">
-                      <div className="flex items-center gap-4">
-                         <div className="p-4 bg-emerald-50 text-emerald-600 rounded-[1.5rem]"><Code2 size={28} /></div>
-                         <h3 className="font-black text-slate-900 text-xl uppercase tracking-tight">Response Payload</h3>
+                    <div className="mt-12">
+                      <div className="flex justify-between items-center mb-6">
+                         <div className="flex items-center gap-3"><Code2 className="text-emerald-600" size={24} /><h4 className="font-black text-sm uppercase">Cấu trúc Response</h4></div>
+                         <button onClick={() => { setJsonModalType('response'); setIsJsonModalOpen(true); }} className="bg-emerald-600 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase shadow-lg">Import JSON</button>
                       </div>
-                      <button onClick={() => { setJsonModalType('response'); setIsJsonModalOpen(true); }} className="bg-emerald-600 text-white px-8 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest">Dán JSON Mẫu</button>
+                      {renderFieldsTable(currentApi.outputParams, 'output')}
                     </div>
-                    {renderFieldsTable(currentApi.outputParams, 'output')}
                  </div>
                </div>
 
                <div className="col-span-4">
-                  <div className="bg-white p-10 rounded-[3rem] border border-slate-100 sticky top-32">
-                    <h3 className="font-black text-sm uppercase tracking-tight mb-8">Sequence Diagram (Vision AI)</h3>
-                    <p className="text-[10px] text-slate-400 font-bold mb-6 uppercase">Tải lên sơ đồ để AI phân tích luồng logic</p>
+                  <div className="bg-white p-10 rounded-[3rem] border border-slate-100 sticky top-32 shadow-sm">
+                    <h3 className="font-black text-sm uppercase tracking-tight mb-4 flex items-center gap-2"><ImageIcon size={18} className="text-blue-600"/> Sequence Diagram</h3>
+                    <p className="text-[10px] text-slate-400 font-bold mb-6 uppercase">AI sẽ tự động phân tích luồng logic từ ảnh này</p>
                     {currentApi.sequenceDiagram ? (
-                       <div className="relative group overflow-hidden rounded-[2rem] border-2">
+                       <div className="relative group overflow-hidden rounded-[2rem] border-2 border-slate-100">
                          <img src={currentApi.sequenceDiagram} className="w-full h-auto" />
                          <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center gap-3">
-                            <button onClick={() => diagramInputRef.current?.click()} className="p-4 bg-white text-slate-900 rounded-2xl"><Edit3 size={20} /></button>
+                            <button onClick={() => diagramInputRef.current?.click()} className="p-4 bg-white text-slate-900 rounded-2xl hover:scale-110 transition-all"><Edit3 size={20} /></button>
                             <button onClick={() => {
                                const newApis = currentProject!.apis.map(a => a.id === currentApi.id ? { ...a, sequenceDiagram: undefined } : a);
                                updateProjectLocal({ apis: newApis }, currentProject!.id);
-                            }} className="p-4 bg-red-600 text-white rounded-2xl"><Trash2 size={20} /></button>
+                            }} className="p-4 bg-red-600 text-white rounded-2xl hover:scale-110 transition-all"><Trash2 size={20} /></button>
                          </div>
                        </div>
                     ) : (
-                       <div onClick={() => diagramInputRef.current?.click()} className="border-4 border-dashed border-slate-50 rounded-[2.5rem] p-16 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-all">
-                          {isUploadingImage ? <Loader2 size={48} className="animate-spin text-blue-500" /> : <ImageIcon size={48} className="text-slate-200 mb-4" />}
-                          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Tải lên Sơ đồ Trình tự</span>
+                       <div onClick={() => diagramInputRef.current?.click()} className="border-4 border-dashed border-slate-50 rounded-[2.5rem] p-12 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-all">
+                          {isUploadingImage ? <Loader2 size={48} className="animate-spin text-blue-500" /> : <Upload size={48} className="text-slate-200 mb-4" />}
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tải lên Sơ đồ</span>
                        </div>
                     )}
                   </div>
@@ -470,29 +460,23 @@ const App: React.FC = () => {
         )}
       </main>
 
+      {/* Modals and Hidden Inputs */}
       <JsonEditorModal 
         isOpen={isJsonModalOpen} 
         onClose={() => setIsJsonModalOpen(false)} 
         initialValue={jsonModalType === 'request' ? currentApi?.requestBody || '{}' : currentApi?.responseBody || '{}'} 
-        title={jsonModalType === 'request' ? 'Import Request JSON' : 'Import Response JSON'} 
+        title={jsonModalType === 'request' ? 'Nhập JSON Request mẫu' : 'Nhập JSON Response mẫu'} 
         onSave={val => {
           if (!currentApi) return;
           try {
             const obj = JSON.parse(val);
-            const existingParams = jsonModalType === 'request' ? currentApi.inputParams : currentApi.outputParams;
             const fields: ApiField[] = [];
             const flatten = (data: any, prefix = '') => {
               if (!data || typeof data !== 'object') return;
               Object.keys(data).forEach(key => {
                 const v = data[key];
                 const name = prefix ? `${prefix}.${key}` : key;
-                const existing = existingParams.find(p => p.name === name);
-                fields.push({ 
-                  name, 
-                  type: Array.isArray(v) ? 'array' : typeof v, 
-                  required: true, 
-                  description: existing ? existing.description : '' 
-                });
+                fields.push({ name, type: Array.isArray(v) ? 'array' : typeof v, required: true, description: '' });
                 if (v && typeof v === 'object' && !Array.isArray(v)) flatten(v, name);
               });
             };
@@ -501,26 +485,24 @@ const App: React.FC = () => {
             const newApis = currentProject!.apis.map(a => a.id === currentApi.id ? { ...a, ...updates } : a);
             updateProjectLocal({ apis: newApis }, currentProject!.id);
             setIsJsonModalOpen(false);
-          } catch (e) { alert("JSON không hợp lệ"); }
+          } catch (e) { alert("JSON không hợp lệ!"); }
         }} 
       />
 
       {showTemplateEditor && currentProject && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center p-6 bg-slate-900/90 backdrop-blur-xl">
            <div className="bg-white w-full max-w-6xl h-[85vh] rounded-[4rem] shadow-2xl flex flex-col overflow-hidden">
-              <div className="px-12 py-10 border-b flex items-center justify-between">
+              <div className="px-12 py-8 border-b flex items-center justify-between">
                  <h3 className="font-black text-2xl uppercase tracking-tighter">Cấu hình Markdown Template</h3>
                  <button onClick={() => setShowTemplateEditor(false)} className="p-4 hover:bg-slate-100 rounded-full text-slate-400"><X size={32} /></button>
               </div>
-              <div className="flex-1 p-12 bg-slate-50/50">
-                 <textarea 
-                    className="w-full h-full p-10 bg-white shadow-inner rounded-[3rem] font-mono text-sm outline-none resize-none ring-4 ring-slate-100" 
-                    value={currentProject.template} 
-                    onChange={e => updateProjectLocal({ template: e.target.value }, currentProject.id)}
-                 />
-              </div>
-              <div className="px-12 py-8 flex justify-end">
-                 <button onClick={() => setShowTemplateEditor(false)} className="bg-slate-900 text-white px-12 py-5 rounded-[2rem] font-black text-xs uppercase tracking-widest">LƯU TEMPLATE</button>
+              <textarea 
+                  className="flex-1 p-16 font-mono text-sm outline-none resize-none bg-slate-50" 
+                  value={currentProject.template} 
+                  onChange={e => updateProjectLocal({ template: e.target.value }, currentProject.id)}
+              />
+              <div className="px-12 py-8 flex justify-end bg-white">
+                 <button onClick={() => setShowTemplateEditor(false)} className="bg-blue-600 text-white px-12 py-5 rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-xl">LƯU THAY ĐỔI</button>
               </div>
            </div>
         </div>
@@ -533,41 +515,23 @@ const App: React.FC = () => {
         try {
           const text = await extractDocumentText(file);
           updateProjectAndCloud({ template: text }, currentProject.id);
-          if (currentProject.cloudConfig.googleDriveFolderId) await uploadRawFile(env, currentProject.cloudConfig.googleDriveFolderId, file);
           e.target.value = '';
         } catch (err: any) { handleError(err); }
         finally { setIsExtracting(false); }
-      }} className="hidden" accept=".docx,.pdf,.txt,.md" />
+      }} className="hidden" accept=".docx,.txt,.md" />
       
       <input type="file" ref={diagramInputRef} onChange={async (e) => {
         const file = e.target.files?.[0];
         if (!file || !currentApiId || !currentProject) return;
         setIsUploadingImage(true);
-        try {
-          if (currentProject.cloudConfig.googleDriveFolderId) await uploadImageFile(env, currentProject.cloudConfig.googleDriveFolderId, file, currentApi?.name || 'api');
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const newApis = currentProject!.apis.map(a => a.id === currentApiId ? { ...a, sequenceDiagram: reader.result as string } : a);
-            updateProjectLocal({ apis: newApis }, currentProject!.id);
-            setIsUploadingImage(false);
-          };
-          reader.readAsDataURL(file);
-        } catch (err: any) {
-          handleError(err);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const newApis = currentProject!.apis.map(a => a.id === currentApiId ? { ...a, sequenceDiagram: reader.result as string } : a);
+          updateProjectLocal({ apis: newApis }, currentProject!.id);
           setIsUploadingImage(false);
-        }
+        };
+        reader.readAsDataURL(file);
       }} className="hidden" accept="image/*" />
-
-      {error && (
-        <div className="fixed bottom-10 right-10 z-[300] bg-white p-8 rounded-[2.5rem] shadow-2xl border border-red-100 flex items-center gap-6 max-w-md animate-in slide-in-from-right-10">
-          <div className="bg-red-50 p-4 rounded-3xl text-red-600"><AlertCircle size={32} /></div>
-          <div className="flex-1">
-            <p className="font-black uppercase text-[10px] tracking-widest text-red-400">Error</p>
-            <p className="text-sm font-black mt-1 text-slate-800">{error.message}</p>
-          </div>
-          <button onClick={() => setError(null)} className="text-slate-300 hover:text-slate-500"><X size={20} /></button>
-        </div>
-      )}
     </div>
   );
 };

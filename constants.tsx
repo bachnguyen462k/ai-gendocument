@@ -1,40 +1,52 @@
 
 export const DEFAULT_TEMPLATE = `
-# TÀI LIỆU KỸ THUẬT API: {{API_NAME}}
+# TÀI LIỆU ĐẶC TẢ KỸ THUẬT API
 
-## 1. Tổng quan
+## 1. THÔNG TIN CHUNG
+- **Công ty**: [TÊN CÔNG TY CỦA BẠN]
+- **Dự án**: {{PROJECT_NAME}}
+- **Phiên bản**: 1.0.0
+- **Ngày tạo**: {{CURRENT_DATE}}
+
+---
+
+## 2. MÔ TẢ CHI TIẾT API: {{API_NAME}}
+
+### 2.1. Thông tin Endpoint
+- **Mô tả chức năng**: {{DESCRIPTION}}
 - **Endpoint**: \`{{ENDPOINT}}\`
 - **Phương thức**: \`{{METHOD}}\`
-- **Mô tả**: {{DESCRIPTION}}
-- **Xác thực**: {{AUTH_TYPE}}
+- **Xác thực (Auth)**: {{AUTH_TYPE}}
 
-## 2. Chi tiết Request
-### 2.1. Tham số đầu vào (Parameters)
+### 2.2. Chi tiết Tham số Đầu vào (Request)
 {{REQUEST_DESCRIPTION_TABLE}}
 
-### 2.2. Ví dụ Request (JSON)
+**Ví dụ Request Body (JSON):**
 \`\`\`json
 {{REQUEST_JSON}}
 \`\`\`
 
-## 3. Chi tiết Response
-### 3.1. Cấu trúc dữ liệu trả về (Fields)
+### 2.3. Chi tiết Dữ liệu Trả về (Response)
 {{RESPONSE_DESCRIPTION_TABLE}}
 
-### 3.2. Ví dụ Response (JSON)
+**Ví dụ Response Body (JSON):**
 \`\`\`json
 {{RESPONSE_JSON}}
 \`\`\`
 
-## 4. Luồng xử lý (Sequence & Logic)
-### 4.1. Sơ đồ trình tự (Sequence Diagram)
+### 2.4. Sơ đồ trình tự (Sequence Diagram)
 {{SEQUENCE_DIAGRAM}}
 
-### 4.2. Giải thích luồng nghiệp vụ
+### 2.5. Mô tả luồng xử lý chi tiết
 {{SEQUENCE_FLOW}}
 
 ---
-*Tài liệu được tạo tự động bởi API Doc Architect AI*
+
+## 3. QUY CHUẨN CHUNG & MÃ LỖI
+- Mọi API đều trả về định dạng JSON.
+- Mã lỗi chuẩn: 200 (Success), 400 (Bad Request), 401 (Unauthorized), 500 (Internal Server Error).
+
+*Tài liệu này được bảo mật và thuộc quyền sở hữu của {{PROJECT_NAME}}*
 `;
 
 export const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
