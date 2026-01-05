@@ -23,36 +23,23 @@ import MarkdownPreview from './components/MarkdownPreview';
 import JsonEditorModal from './components/JsonEditorModal';
 
 const STORAGE_KEY = 'api_doc_architect_data';
-const CONFIG_KEY = 'api_doc_architect_config';
 
 const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   
   // Khởi tạo globalConfig an toàn từ process.env
   const [globalConfig] = useState<GlobalConfig>(() => {
-    const savedConfig = localStorage.getItem(CONFIG_KEY);
-    let baseConfig: GlobalConfig = {
-      defaultGoogleDriveFolderId: 'root',
-      autoSaveToCloud: true,
-      accessToken: ''
-    };
-
-    if (savedConfig) {
-      try {
-        baseConfig = { ...baseConfig, ...JSON.parse(savedConfig) };
-      } catch (e) {
-        console.error("Error parsing saved config", e);
-      }
-    }
-
-    // Ưu tiên tuyệt đối biến môi trường từ .env
-    const envToken = (process.env as any).GOOGLE_ACCESS_TOKEN;
-    const envFolderId = (process.env as any).GOOGLE_DRIVE_FOLDER_ID;
+    // Ưu tiên tuyệt đối biến môi trường từ process.env
+    // Truy cập qua window.process.env để tránh lỗi build-time nếu cần
+    const env = (window as any).process?.env || {};
+    
+    const envToken = env.GOOGLE_ACCESS_TOKEN || "";
+    const envFolderId = env.GOOGLE_DRIVE_FOLDER_ID || "root";
 
     return {
-      ...baseConfig,
-      accessToken: envToken || baseConfig.accessToken,
-      defaultGoogleDriveFolderId: envFolderId || baseConfig.defaultGoogleDriveFolderId
+      defaultGoogleDriveFolderId: envFolderId,
+      autoSaveToCloud: true,
+      accessToken: envToken
     };
   });
 
@@ -89,7 +76,7 @@ const App: React.FC = () => {
     const msg = err.message || "Đã có lỗi xảy ra";
     
     if (msg === 'UNAUTHORIZED' || msg === 'MISSING_TOKEN') {
-      setError({ message: "Google Access Token không hợp lệ hoặc đã hết hạn. Vui lòng kiểm tra lại file .env.", isAuth: true });
+      setError({ message: "Không tìm thấy hoặc Token Google không hợp lệ. Vui lòng kiểm tra GOOGLE_ACCESS_TOKEN trong file .env và khởi động lại server.", isAuth: true });
     } else if (msg.includes('Failed to fetch') || msg.includes('CORS')) {
       setError({ 
         message: "Lỗi CORS: Hãy đảm bảo domain localhost đã được thêm vào Authorized Origins trong Google Cloud Console.", 
@@ -120,7 +107,7 @@ const App: React.FC = () => {
 
   const createProject = async () => {
     if (!globalConfig.accessToken) {
-      setError({ message: "Không tìm thấy GOOGLE_ACCESS_TOKEN. Vui lòng cấu hình trong file .env.", isAuth: true });
+      setError({ message: "Không tìm thấy GOOGLE_ACCESS_TOKEN trong môi trường. Hãy cấu hình file .env.", isAuth: true });
       return;
     }
 
@@ -193,11 +180,11 @@ const App: React.FC = () => {
           <div className="flex items-center gap-3">
              {globalConfig.accessToken ? (
                <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 shadow-sm">
-                  <Globe size={16} /> <span className="text-[10px] font-black uppercase tracking-tight">Cloud Online</span>
+                  <Globe size={16} /> <span className="text-[10px] font-black uppercase tracking-tight">Cloud Connect Active</span>
                </div>
              ) : (
-               <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-400 rounded-xl border border-slate-200">
-                  <Globe size={16} /> <span className="text-[10px] font-black uppercase tracking-tight">Cloud Offline</span>
+               <div className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-700 rounded-xl border border-red-100">
+                  <ShieldAlert size={16} /> <span className="text-[10px] font-black uppercase tracking-tight">Env Missing Token</span>
                </div>
              )}
           </div>
@@ -220,7 +207,7 @@ const App: React.FC = () => {
               <div className="bg-white rounded-[3rem] p-20 border-4 border-dashed border-slate-100 flex flex-col items-center justify-center text-center">
                 <Database size={64} className="text-slate-100 mb-6" />
                 <h3 className="text-2xl font-black text-slate-300">Chưa có dự án nào</h3>
-                <p className="text-slate-400 mt-2 max-w-sm">Tất cả dữ liệu được đồng bộ tự động với Google Drive của bạn thông qua cấu hình trong file .env</p>
+                <p className="text-slate-400 mt-2 max-w-sm font-medium leading-relaxed">Tất cả dữ liệu được đồng bộ tự động với Google Drive thông qua TOKEN trong file .env</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
