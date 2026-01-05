@@ -45,11 +45,14 @@ const App: React.FC = () => {
       }
     }
 
-    // Ghi đè bằng biến môi trường nếu có
+    // Ghi đè bằng biến môi trường từ .env nếu có
+    const envToken = (process.env as any).GOOGLE_ACCESS_TOKEN;
+    const envFolderId = (process.env as any).GOOGLE_DRIVE_FOLDER_ID;
+
     return {
       ...config,
-      defaultGoogleDriveFolderId: (process.env as any).GOOGLE_DRIVE_FOLDER_ID || config.defaultGoogleDriveFolderId,
-      accessToken: (process.env as any).GOOGLE_ACCESS_TOKEN || config.accessToken
+      defaultGoogleDriveFolderId: envFolderId || config.defaultGoogleDriveFolderId,
+      accessToken: envToken || config.accessToken
     };
   });
 
@@ -89,10 +92,10 @@ const App: React.FC = () => {
     const msg = err.message || "";
     
     if (msg === 'UNAUTHORIZED' || msg === 'MISSING_TOKEN') {
-      setError({ message: "Phiên đăng nhập Google đã hết hạn. Vui lòng lấy Token mới.", isAuth: true });
+      setError({ message: "Phiên đăng nhập Google đã hết hạn hoặc thiếu Token. Vui lòng kiểm tra file .env hoặc cài đặt.", isAuth: true });
     } else if (msg.includes('Failed to fetch') || msg.includes('CORS')) {
       setError({ 
-        message: "Lỗi kết nối (CORS). Có thể domain này chưa được phép truy cập Google API của bạn.", 
+        message: "Lỗi kết nối (CORS). Hãy đảm bảo domain này được cấu hình trong Google Cloud Console.", 
         isAuth: false,
         isCors: true 
       });
@@ -120,7 +123,7 @@ const App: React.FC = () => {
 
   const createProject = async () => {
     if (!globalConfig.accessToken) {
-      setError({ message: "Vui lòng cấu hình Google Access Token trước khi tạo dự án.", isAuth: true });
+      setError({ message: "Vui lòng cấu hình Google Access Token trong file .env hoặc Settings.", isAuth: true });
       setView('settings');
       return;
     }
@@ -285,7 +288,7 @@ const App: React.FC = () => {
                 </div>
                 <div className="flex justify-between items-center">
                   <p className="text-[10px] text-slate-400 font-bold leading-relaxed px-1">
-                    Token này chỉ có hiệu lực trong 1 giờ.
+                    Bạn có thể cấu hình Token này trong file .env để tự động tải khi khởi chạy.
                   </p>
                   <button 
                     onClick={handleTestConnection}
@@ -320,7 +323,7 @@ const App: React.FC = () => {
                   <div className="bg-blue-600 p-3 rounded-2xl text-white shadow-lg"><ShieldCheck size={24} /></div>
                   <div>
                     <h4 className="text-sm font-black text-white">Gemini AI Engine</h4>
-                    <p className="text-[10px] text-blue-400 font-bold uppercase mt-0.5 tracking-widest">Direct access via API_KEY</p>
+                    <p className="text-[10px] text-blue-400 font-bold uppercase mt-0.5 tracking-widest">Sử dụng API_KEY từ .env</p>
                   </div>
                 </div>
               </div>
@@ -628,7 +631,7 @@ const App: React.FC = () => {
               </div>
               <div>
                 <p className="font-black uppercase text-[10px] tracking-widest text-red-500">
-                  {error.isAuth ? 'AUTH EXPIRED' : error.isCors ? 'CORS BLOCKED' : 'SYSTEM ERROR'}
+                  {error.isAuth ? 'AUTH/TOKEN ISSUE' : error.isCors ? 'CORS BLOCKED' : 'SYSTEM ERROR'}
                 </p>
                 <p className="text-sm font-bold mt-1 leading-relaxed">{error.message}</p>
               </div>
@@ -638,7 +641,7 @@ const App: React.FC = () => {
                <div className="bg-white/5 p-4 rounded-xl border border-white/10 space-y-2">
                  <p className="text-[10px] font-bold text-slate-400 uppercase">Cách sửa:</p>
                  <p className="text-[10px] text-slate-300 leading-relaxed">
-                   Bạn cần thêm domain này vào <b>Authorized JavaScript origins</b> trong trang cấu hình OAuth Client của dự án Google Cloud.
+                   Bạn cần thêm domain này vào <b>Authorized JavaScript origins</b> trong Google Cloud Console.
                  </p>
                </div>
             )}
@@ -648,7 +651,7 @@ const App: React.FC = () => {
                 onClick={() => { setView('settings'); setError(null); }}
                 className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-xs shadow-xl shadow-blue-500/20 transition-all flex items-center justify-center gap-2"
               >
-                <LogIn size={16} /> LÀM MỚI KẾT NỐI
+                <LogIn size={16} /> CẬP NHẬT KẾT NỐI
               </button>
             ) : (
               <button 
