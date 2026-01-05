@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   FileText, Send, Loader2, Info, BookOpen, Layers, 
@@ -17,7 +16,6 @@ import {
   uploadDocFile,
   uploadRawFile,
   uploadImageFile,
-  checkConnection,
   listRemoteProjectFolders,
   findProjectSheetInFolder,
   fetchProjectFromSheet
@@ -38,7 +36,7 @@ const App: React.FC = () => {
     const procEnv = (window.process as any)?.env || {};
 
     return {
-      API_KEY: procEnv.API_KEY || metaEnv.VITE_API_KEY || "",
+      // GOOGLE services still require tokens, but Gemini API key is assumed to be in process.env.API_KEY
       GOOGLE_ACCESS_TOKEN: procEnv.GOOGLE_ACCESS_TOKEN || metaEnv.VITE_GOOGLE_ACCESS_TOKEN || "",
       GOOGLE_REFRESH_TOKEN: procEnv.GOOGLE_REFRESH_TOKEN || metaEnv.VITE_GOOGLE_REFRESH_TOKEN || "",
       GOOGLE_CLIENT_ID: procEnv.GOOGLE_CLIENT_ID || metaEnv.VITE_GOOGLE_CLIENT_ID || "",
@@ -49,7 +47,6 @@ const App: React.FC = () => {
 
   const missingKeys = useMemo(() => {
     const missing = [];
-    if (!env.API_KEY) missing.push("API_KEY");
     if (!env.GOOGLE_ACCESS_TOKEN && !env.GOOGLE_REFRESH_TOKEN) missing.push("TOKEN (Access or Refresh)");
     return missing;
   }, [env]);
@@ -296,16 +293,13 @@ const App: React.FC = () => {
   };
 
   const handleGenerateFullDoc = async () => {
-    if (!env.API_KEY || !currentProject) {
-      handleError(new Error("Thiếu API_KEY hoặc chưa chọn dự án"));
+    if (!currentProject) {
+      handleError(new Error("Chưa chọn dự án"));
       return;
     }
     setStatus('processing');
     try {
-      if (!(window.process as any).env.API_KEY) {
-        (window.process as any).env.API_KEY = env.API_KEY;
-      }
-      
+      // The generateApiDoc function will use process.env.API_KEY directly.
       const doc = await generateApiDoc(currentProject.apis, currentProject.template);
       setResult(doc);
       setStatus('completed');
