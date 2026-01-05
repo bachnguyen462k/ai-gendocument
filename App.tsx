@@ -8,7 +8,7 @@ import {
   Upload, File, Save, ExternalLink, AlertCircle, FilePlus,
   ArrowRightLeft, Code2, ClipboardList, Image as ImageIcon,
   LogIn, Globe, Key, FolderOpen, LogOut, HelpCircle, ShieldAlert, X, Terminal,
-  Cpu, FileSearch, Eye, Type, Asterisk, Activity, Wifi, WifiOff
+  Cpu, FileSearch, Eye, Type, Asterisk, Activity, Wifi, WifiOff, Search
 } from 'lucide-react';
 import { generateApiDoc } from './services/geminiService';
 import { 
@@ -16,7 +16,11 @@ import {
   syncProjectToSheet, 
   uploadDocFile,
   uploadRawFile,
-  checkConnection
+  uploadImageFile,
+  checkConnection,
+  listRemoteProjectFolders,
+  findProjectSheetInFolder,
+  fetchProjectFromSheet
 } from './services/googleDriveService';
 import { extractDocumentText } from './services/documentService';
 import { Project, ApiInfo, AppView, AppStatus, CloudConfig, GlobalConfig, ApiField } from './types';
@@ -59,7 +63,9 @@ const App: React.FC = () => {
   const [error, setError] = useState<{message: string, isAuth: boolean} | null>(null);
   const [showSyncSuccess, setShowSyncSuccess] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
   
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false);
   const [jsonModalType, setJsonModalType] = useState<'request' | 'response'>('request');
@@ -104,6 +110,46 @@ const App: React.FC = () => {
     setProjects(updatedProjects);
     setSyncStatus('pending');
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProjects));
+  };
+
+  const handleScanCloud = async () => {
+    if (missingKeys.length > 0) {
+      handleError(new Error("Cần cấu hình Token trước khi quét Cloud"));
+      return;
+    }
+    setIsScanning(true);
+    try {
+      const folders = await listRemoteProjectFolders(env);
+      const newCloudProjects: Project[] = [];
+
+      for (const folder of folders) {
+        const alreadyExists = projects.some(p => p.cloudConfig.googleDriveFolderId === folder.id);
+        if (alreadyExists) continue;
+
+        const sheet = await findProjectSheetInFolder(env, folder.id);
+        if (sheet) {
+          try {
+            const projectData = await fetchProjectFromSheet(env, sheet.id, folder.id);
+            if (!projectData.template) projectData.template = DEFAULT_TEMPLATE;
+            newCloudProjects.push(projectData);
+          } catch (e) {
+            console.error(`Lỗi khi fetch dữ liệu từ project ${folder.name}:`, e);
+          }
+        }
+      }
+
+      if (newCloudProjects.length > 0) {
+        const updatedProjects = [...newCloudProjects, ...projects];
+        setProjects(updatedProjects);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProjects));
+      } else {
+        alert("Không tìm thấy dự án mới nào trên Cloud.");
+      }
+    } catch (err: any) {
+      handleError(err);
+    } finally {
+      setIsScanning(false);
+    }
   };
 
   const triggerSync = async (projectId: string) => {
@@ -295,34 +341,30 @@ const App: React.FC = () => {
                 <h2 className="text-4xl font-black text-gray-900 tracking-tighter">Chào mừng quay lại</h2>
                 <p className="text-slate-400 font-bold text-xs mt-1 uppercase tracking-widest">Hệ thống thiết kế API đặc tả thông minh</p>
               </div>
-              <button onClick={createProject} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-3xl font-black shadow-xl flex items-center gap-3 transition-all active:scale-95 disabled:opacity-50" disabled={status === 'syncing'}>
-                {status === 'syncing' ? <Loader2 size={24} className="animate-spin" /> : <Plus size={24} />} Tạo Dự án Mới
-              </button>
-            </div>
-
-            {missingKeys.length > 0 && (
-              <div className="bg-white border-2 border-red-200 p-8 rounded-[2.5rem] shadow-xl shadow-red-500/5">
-                <div className="flex flex-col md:flex-row items-start gap-8">
-                  <div className="bg-red-100 p-5 rounded-3xl text-red-600 shadow-inner"><Terminal size={32} /></div>
-                  <div className="flex-1 space-y-4">
-                    <h4 className="font-black text-red-900 uppercase tracking-tight text-lg">CẦN CẤU HÌNH TRƯỚC KHI SỬ DỤNG</h4>
-                    <p className="text-sm text-red-700/80 font-medium">Để sử dụng "vĩnh viễn", hãy cấu hình đầy đủ Client ID và Refresh Token trong <code>.env</code>:</p>
-                    <div className="bg-slate-900 p-6 rounded-3xl text-blue-200 font-mono text-[10px] border border-blue-500/20 shadow-2xl overflow-x-auto">
-                       <p><span className="text-pink-400">VITE_GOOGLE_CLIENT_ID</span>=...apps.googleusercontent.com</p>
-                       <p><span className="text-blue-400">VITE_GOOGLE_CLIENT_SECRET</span>=GOCSPX-...</p>
-                       <p><span className="text-emerald-400">VITE_GOOGLE_REFRESH_TOKEN</span>=1//0...</p>
-                    </div>
-                  </div>
-                </div>
+              <div className="flex gap-4">
+                <button 
+                  onClick={handleScanCloud} 
+                  disabled={isScanning || missingKeys.length > 0} 
+                  className="bg-white border border-slate-200 hover:border-blue-500 hover:text-blue-600 text-slate-600 px-6 py-4 rounded-3xl font-black shadow-sm flex items-center gap-3 transition-all active:scale-95 disabled:opacity-50"
+                >
+                  {isScanning ? <Loader2 size={24} className="animate-spin" /> : <Search size={24} />} QUÉT CLOUD
+                </button>
+                <button 
+                  onClick={createProject} 
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-3xl font-black shadow-xl flex items-center gap-3 transition-all active:scale-95 disabled:opacity-50" 
+                  disabled={status === 'syncing'}
+                >
+                  {status === 'syncing' ? <Loader2 size={24} className="animate-spin" /> : <Plus size={24} />} Tạo Dự án Mới
+                </button>
               </div>
-            )}
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               {projects.length === 0 ? (
                 <div className="col-span-full py-32 text-center flex flex-col items-center justify-center bg-white rounded-[3rem] border-4 border-dashed border-slate-100">
                   <div className="p-8 bg-slate-50 rounded-[2.5rem] text-slate-200 mb-6"><Database size={64} /></div>
                   <h3 className="text-2xl font-black text-slate-300">Chưa có dự án nào</h3>
-                  <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mt-2">Bắt đầu bằng cách tạo dự án mới</p>
+                  <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mt-2">Bắt đầu bằng cách tạo dự án mới hoặc nhấn QUÉT CLOUD</p>
                 </div>
               ) : projects.map(p => (
                 <div key={p.id} onClick={() => { setCurrentProjectId(p.id); setView('project-detail'); }} className="group bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:-translate-y-1 cursor-pointer transition-all duration-300">
@@ -330,7 +372,7 @@ const App: React.FC = () => {
                   <h3 className="text-2xl font-black text-gray-900 mb-3 truncate tracking-tight">{p.name}</h3>
                   <p className="text-slate-400 text-sm font-medium line-clamp-2 mb-6 h-10">{p.description}</p>
                   <div className="flex items-center justify-between pt-6 border-t border-slate-50">
-                    <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase tracking-tight"><Cloud size={14} /> Ready</div>
+                    <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase tracking-tight"><Cloud size={14} /> {p.cloudConfig.googleSheetId ? 'Cloud Synced' : 'Local Only'}</div>
                     <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">{p.apis.length} APIs</span>
                   </div>
                 </div>
@@ -491,8 +533,8 @@ const App: React.FC = () => {
                        </div>
                     ) : (
                        <div onClick={() => diagramInputRef.current?.click()} className="border-4 border-dashed border-slate-50 rounded-[2.5rem] p-16 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-all group">
-                          <ImageIcon size={48} className="text-slate-200 group-hover:text-blue-500 mb-4 transition-all" />
-                          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Tải lên sơ đồ</span>
+                          {isUploadingImage ? <Loader2 size={48} className="animate-spin text-blue-500" /> : <ImageIcon size={48} className="text-slate-200 group-hover:text-blue-500 mb-4 transition-all" />}
+                          <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">{isUploadingImage ? "Đang tải lên..." : "Tải lên sơ đồ"}</span>
                        </div>
                     )}
                   </div>
@@ -564,25 +606,39 @@ const App: React.FC = () => {
         setIsExtracting(true);
         try {
           const text = await extractDocumentText(file);
-          updateProjectLocal({ template: text }, currentProject.id);
-          if (env.GOOGLE_DRIVE_FOLDER_ID) {
-             await uploadRawFile(env, env.GOOGLE_DRIVE_FOLDER_ID, file);
+          updateProjectAndCloud({ template: text }, currentProject.id);
+          
+          if (currentProject.cloudConfig.googleDriveFolderId) {
+             await uploadRawFile(env, currentProject.cloudConfig.googleDriveFolderId, file);
           }
+          
           e.target.value = '';
         } catch (err: any) { handleError(err); }
         finally { setIsExtracting(false); }
       }} className="hidden" accept=".docx,.pdf,.txt,.md" />
       
-      <input type="file" ref={diagramInputRef} onChange={(e) => {
+      <input type="file" ref={diagramInputRef} onChange={async (e) => {
         const file = e.target.files?.[0];
-        if (!file || !currentApiId) return;
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const newApis = currentProject!.apis.map(a => a.id === currentApiId ? { ...a, sequenceDiagram: reader.result as string } : a);
-          updateProjectLocal({ apis: newApis }, currentProject!.id);
-          e.target.value = '';
-        };
-        reader.readAsDataURL(file);
+        if (!file || !currentApiId || !currentProject) return;
+        
+        setIsUploadingImage(true);
+        try {
+          if (currentProject.cloudConfig.googleDriveFolderId) {
+            await uploadImageFile(env, currentProject.cloudConfig.googleDriveFolderId, file, currentApi?.name || 'api');
+          }
+
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const newApis = currentProject!.apis.map(a => a.id === currentApiId ? { ...a, sequenceDiagram: reader.result as string } : a);
+            updateProjectLocal({ apis: newApis }, currentProject!.id);
+            e.target.value = '';
+            setIsUploadingImage(false);
+          };
+          reader.readAsDataURL(file);
+        } catch (err: any) {
+          handleError(err);
+          setIsUploadingImage(false);
+        }
       }} className="hidden" accept="image/*" />
 
       {error && (
@@ -598,16 +654,6 @@ const App: React.FC = () => {
               </div>
               <button onClick={() => setError(null)} className="p-3 hover:bg-slate-100 rounded-full transition-all text-slate-400"><X size={20} /></button>
             </div>
-            {error.isAuth && !env.GOOGLE_REFRESH_TOKEN && (
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                 <p className="text-[10px] font-black uppercase text-slate-500 mb-2">Để sử dụng vĩnh viễn:</p>
-                 <ul className="text-[11px] space-y-1 text-slate-600 font-medium list-disc ml-4">
-                    <li>Dùng Google OAuth Playground lấy <b>Refresh Token</b></li>
-                    <li>Cấp quyền: <code className="bg-slate-200 px-1 rounded">drive.file</code> và <code className="bg-slate-200 px-1 rounded">spreadsheets</code></li>
-                    <li>Thêm <code className="bg-slate-200 px-1 rounded">GOOGLE_CLIENT_ID</code> & <code className="bg-slate-200 px-1 rounded">REFRESH_TOKEN</code> vào .env</li>
-                 </ul>
-              </div>
-            )}
           </div>
         </div>
       )}
