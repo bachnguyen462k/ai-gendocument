@@ -7,7 +7,8 @@ pdfjs.GlobalWorkerOptions.workerSrc = `https://esm.sh/pdfjs-dist@${pdfjs.version
 
 export const extractTextFromDocx = async (file: File): Promise<string> => {
   const arrayBuffer = await file.arrayBuffer();
-  const result = await mammoth.extractRawText({ arrayBuffer });
+  // Sử dụng convertToHtml để giữ lại các thẻ b, i, table, h1, h2...
+  const result = await mammoth.convertToHtml({ arrayBuffer });
   return result.value;
 };
 

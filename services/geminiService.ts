@@ -2,54 +2,68 @@
 import { GoogleGenAI } from "@google/genai";
 import { ApiInfo } from "../types";
 
-export const generateApiDoc = async (apiInfo: ApiInfo, template: string): Promise<string> => {
-  // Always initialize GoogleGenAI with { apiKey: process.env.API_KEY } as per guidelines.
+export const generateApiDoc = async (apis: ApiInfo[], templateHtml: string): Promise<string> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
+  const apisDataString = apis.map((api, index) => `
+    API #${index + 1}:
+    - Tên API: ${api.name}
+    - Mô tả chức năng: ${api.description}
+    - Method: ${api.method}
+    - Endpoint: ${api.endpoint}
+    - Payload Request (JSON): ${api.requestBody}
+    - Payload Response (JSON): ${api.responseBody}
+    - Bảng tham số đầu vào: ${JSON.stringify(api.inputParams)}
+    - Bảng tham số đầu ra: ${JSON.stringify(api.outputParams)}
+    - Có ảnh Sequence Diagram: ${api.sequenceDiagram ? 'CÓ' : 'KHÔNG'}
+  `).join('\n\n---\n\n');
+
+  // Fix: Removed out-of-scope 'index' variable and replaced it with a generic placeholder instruction
   const prompt = `
-    Bạn là một chuyên gia viết tài liệu kỹ thuật (Technical Writer) cao cấp. 
-    Hãy viết tài liệu API dựa trên thông tin chi tiết dưới đây và tuân thủ tuyệt đối theo mẫu (template) đã cung cấp.
-    
-    THÔNG TIN CHI TIẾT API:
-    - Tên API: ${apiInfo.name}
-    - Phương thức: ${apiInfo.method}
-    - Endpoint: ${apiInfo.endpoint}
-    - Xác thực: ${apiInfo.authType}
-    
-    CÁC TRƯỜNG DỮ LIỆU INPUT:
-    ${JSON.stringify(apiInfo.inputParams, null, 2)}
+    Bạn là một kỹ sư hệ thống chuyên viết tài liệu đặc tả kỹ thuật API (Technical Design Document).
+    Nhiệm vụ: Sử dụng nội dung từ file mẫu (TEMPLATE) và điền thông tin chi tiết các API vào đúng các mục tương ứng.
 
-    REQUEST BODY MẪU:
-    ${apiInfo.requestBody}
+    YÊU CẦU CHI TIẾT:
+    1. Giữ nguyên toàn bộ cấu trúc định dạng của TEMPLATE (Style, Table, Font).
+    2. Tại mỗi mục API, hãy viết "Mô tả chi tiết đầu vào" bao gồm:
+       - Giải thích logic xử lý của API.
+       - Trình bày bảng tham số Request và ví dụ JSON Request.
+       - Trình bày bảng tham số Response và ví dụ JSON Response.
+    3. QUAN TRỌNG: Nếu API có ảnh Sequence Diagram, hãy chèn một đoạn mã HTML img với src="[IMAGE_DATA_API_X]" (trong đó X là số thứ tự của API, ví dụ API #1 thì X=1) vào vị trí mô tả sơ đồ. 
+       Nếu không có ảnh, hãy viết "Chưa có sơ đồ trình tự cho API này".
+    4. Đảm bảo ngôn ngữ kỹ thuật chuyên nghiệp, chính xác.
 
-    RESPONSE BODY MẪU:
-    ${apiInfo.responseBody}
+    DỮ LIỆU API:
+    ${apisDataString}
 
-    MẪU TÀI LIỆU (TEMPLATE):
-    ${template}
+    FILE MẪU:
+    ${templateHtml}
 
-    YÊU CẦU CỤ THỂ:
-    1. Trình bày các trường dữ liệu input dưới dạng bảng Markdown chuyên nghiệp (Tên, Kiểu, Bắt buộc, Mô tả).
-    2. Giải thích ý nghĩa của từng trường dựa trên tên và kiểu dữ liệu nếu mô tả còn sơ sài.
-    3. Điền các giá trị vào các placeholder: {{API_NAME}}, {{ENDPOINT}}, {{METHOD}}, {{AUTH_TYPE}}, {{REQUEST_JSON}}, {{RESPONSE_JSON}}, {{REQUEST_DESCRIPTION}}.
-    4. Tài liệu phải mạch lạc, chuẩn văn phong kỹ thuật.
-    5. Ngôn ngữ: Tiếng Việt.
+    LƯU Ý: Không tóm tắt nội dung, hãy viết đầy đủ và chi tiết nhất có thể để lập trình viên có thể hiểu và code được ngay.
   `;
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
-        temperature: 0.3, // Lower temperature for more consistent technical output
-        topP: 0.95,
+        temperature: 0.1,
       },
     });
 
-    // Use .text property to extract output string
-    return response.text || "Không thể tạo tài liệu.";
+    let docContent = response.text || "";
+
+    // Thay thế các placeholder ảnh bằng dữ liệu Base64 thực tế
+    apis.forEach((api, idx) => {
+      if (api.sequenceDiagram) {
+        const placeholder = `[IMAGE_DATA_API_${idx + 1}]`;
+        docContent = docContent.split(placeholder).join(api.sequenceDiagram);
+      }
+    });
+
+    return docContent;
   } catch (error) {
     console.error("Gemini Error:", error);
-    throw new Error("Lỗi khi kết nối với AI. Vui lòng thử lại.");
+    throw new Error("Lỗi khi tạo tài liệu chi tiết.");
   }
 };
