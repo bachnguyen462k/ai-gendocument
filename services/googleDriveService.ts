@@ -5,6 +5,7 @@ const UPLOAD_API_BASE = 'https://www.googleapis.com/upload/drive/v3';
 
 async function gfetch(url: string, options: any = {}, token: string) {
   if (!token) {
+    console.error('Google Access Token is missing');
     throw new Error('MISSING_TOKEN');
   }
 
@@ -13,27 +14,34 @@ async function gfetch(url: string, options: any = {}, token: string) {
     ...options.headers,
   };
 
-  // Chỉ thêm Content-Type nếu có body và không phải FormData
   if (options.body && !(options.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
 
-  const res = await fetch(url, {
-    ...options,
-    headers,
-    mode: 'cors', // Đảm bảo luôn sử dụng chế độ CORS
-  });
+  try {
+    const res = await fetch(url, {
+      ...options,
+      headers,
+      mode: 'cors',
+    });
 
-  if (res.status === 401) {
-    throw new Error('UNAUTHORIZED');
-  }
+    if (res.status === 401) {
+      console.error('Google API 401: Unauthorized. Token might be expired.');
+      throw new Error('UNAUTHORIZED');
+    }
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: { message: 'Unknown Google API Error' } }));
-    throw new Error(err.error?.message || `Error ${res.status}: ${res.statusText}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: { message: `HTTP Error ${res.status}` } }));
+      console.error('Google API Error:', err);
+      throw new Error(err.error?.message || `Error ${res.status}: ${res.statusText}`);
+    }
+    
+    return res.json();
+  } catch (error: any) {
+    if (error.message === 'UNAUTHORIZED' || error.message === 'MISSING_TOKEN') throw error;
+    console.error('Network or Parse Error in gfetch:', error);
+    throw new Error(`Connection Error: ${error.message}`);
   }
-  
-  return res.json();
 }
 
 export const checkConnection = async (token: string) => {
@@ -41,7 +49,6 @@ export const checkConnection = async (token: string) => {
 };
 
 export const createProjectStructure = async (token: string, projectName: string, parentFolderId: string = 'root') => {
-  // 1. Tạo Folder - Sử dụng Drive API
   const folder = await gfetch(`${DRIVE_API_BASE}/files`, {
     method: 'POST',
     body: JSON.stringify({
@@ -51,7 +58,6 @@ export const createProjectStructure = async (token: string, projectName: string,
     })
   }, token);
 
-  // 2. Tạo Google Sheet - Sử dụng Drive API để tạo file với mimeType Spreadsheet
   const sheet = await gfetch(`${DRIVE_API_BASE}/files`, {
     method: 'POST',
     body: JSON.stringify({
@@ -89,10 +95,9 @@ export const syncProjectToSheet = async (token: string, sheetId: string, project
     ]);
   });
 
-  // Sử dụng Sheets API endpoint chuẩn
   const url = `${SHEETS_API_BASE}/${sheetId}/values/A1:H500?valueInputOption=USER_ENTERED`;
   
-  await gfetch(url, {
+  return await gfetch(url, {
     method: 'PUT',
     body: JSON.stringify({ values })
   }, token);
@@ -109,7 +114,6 @@ export const uploadDocFile = async (token: string, folderId: string, fileName: s
   form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
   form.append('file', new Blob(['\ufeff', htmlContent], { type: 'text/html' }));
 
-  // Multipart upload yêu cầu xử lý header đặc biệt (không set Content-Type để browser tự set boundary)
   const res = await fetch(`${UPLOAD_API_BASE}/files?uploadType=multipart`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}` },
@@ -118,7 +122,10 @@ export const uploadDocFile = async (token: string, folderId: string, fileName: s
   });
 
   if (res.status === 401) throw new Error('UNAUTHORIZED');
-  if (!res.ok) throw new Error('Upload failed');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || 'Upload failed');
+  }
   
   return res.json();
 };
