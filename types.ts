@@ -42,5 +42,5 @@ export interface Project {
   cloudConfig: CloudConfig;
 }
 
-export type AppView = 'dashboard' | 'project-detail' | 'api-edit' | 'settings';
+export type AppView = 'dashboard' | 'project-detail' | 'api-edit';
 export type AppStatus = 'idle' | 'processing' | 'completed' | 'error' | 'syncing' | 'unauthorized';

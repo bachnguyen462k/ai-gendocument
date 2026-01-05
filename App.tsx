@@ -7,7 +7,7 @@ import {
   ArrowLeft, HardDrive, ShieldCheck, Zap, RefreshCw, List,
   Upload, File, Save, ExternalLink, AlertCircle, FilePlus,
   ArrowRightLeft, Code2, ClipboardList, Image as ImageIcon,
-  LogIn, Globe, Key, FolderOpen, LogOut, HelpCircle, ShieldAlert
+  LogIn, Globe, Key, FolderOpen, LogOut, HelpCircle, ShieldAlert, X
 } from 'lucide-react';
 import { generateApiDoc } from './services/geminiService';
 import { 
@@ -28,8 +28,8 @@ const CONFIG_KEY = 'api_doc_architect_config';
 const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   
-  // Khởi tạo globalConfig an toàn
-  const [globalConfig, setGlobalConfig] = useState<GlobalConfig>(() => {
+  // Khởi tạo globalConfig an toàn từ process.env
+  const [globalConfig] = useState<GlobalConfig>(() => {
     const savedConfig = localStorage.getItem(CONFIG_KEY);
     let baseConfig: GlobalConfig = {
       defaultGoogleDriveFolderId: 'root',
@@ -45,7 +45,7 @@ const App: React.FC = () => {
       }
     }
 
-    // Ưu tiên biến môi trường từ .env nếu có
+    // Ưu tiên tuyệt đối biến môi trường từ .env
     const envToken = (process.env as any).GOOGLE_ACCESS_TOKEN;
     const envFolderId = (process.env as any).GOOGLE_DRIVE_FOLDER_ID;
 
@@ -64,7 +64,6 @@ const App: React.FC = () => {
   const [error, setError] = useState<{message: string, isAuth: boolean, isCors?: boolean} | null>(null);
   const [showSyncSuccess, setShowSyncSuccess] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
-  const [apiEditTab, setApiEditTab] = useState<'request' | 'response' | 'diagram'>('request');
   
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false);
   const [jsonModalType, setJsonModalType] = useState<'request' | 'response'>('request');
@@ -82,11 +81,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const saveConfig = (newConfig: GlobalConfig) => {
-    setGlobalConfig(newConfig);
-    localStorage.setItem(CONFIG_KEY, JSON.stringify(newConfig));
-  };
-
   const currentProject = useMemo(() => projects.find(p => p.id === currentProjectId), [projects, currentProjectId]);
   const currentApi = useMemo(() => currentProject?.apis.find(a => a.id === currentApiId), [currentProject, currentApiId]);
 
@@ -95,10 +89,10 @@ const App: React.FC = () => {
     const msg = err.message || "Đã có lỗi xảy ra";
     
     if (msg === 'UNAUTHORIZED' || msg === 'MISSING_TOKEN') {
-      setError({ message: "Thiếu Google Access Token hoặc Token hết hạn. Hãy kiểm tra file .env hoặc Settings.", isAuth: true });
+      setError({ message: "Google Access Token không hợp lệ hoặc đã hết hạn. Vui lòng kiểm tra lại file .env.", isAuth: true });
     } else if (msg.includes('Failed to fetch') || msg.includes('CORS')) {
       setError({ 
-        message: "Lỗi CORS: Hãy thêm domain local vào 'Authorized JavaScript origins' trong Google Cloud Console.", 
+        message: "Lỗi CORS: Hãy đảm bảo domain localhost đã được thêm vào Authorized Origins trong Google Cloud Console.", 
         isAuth: false,
         isCors: true 
       });
@@ -126,8 +120,7 @@ const App: React.FC = () => {
 
   const createProject = async () => {
     if (!globalConfig.accessToken) {
-      setError({ message: "Vui lòng nhập Google Access Token trong phần Settings hoặc .env trước.", isAuth: true });
-      setView('settings');
+      setError({ message: "Không tìm thấy GOOGLE_ACCESS_TOKEN. Vui lòng cấu hình trong file .env.", isAuth: true });
       return;
     }
 
@@ -189,20 +182,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleTestConnection = async () => {
-    setTestStatus('loading');
-    try {
-      await checkConnection(globalConfig.accessToken || '');
-      setTestStatus('success');
-      setTimeout(() => setTestStatus('idle'), 3000);
-    } catch (e) {
-      setTestStatus('error');
-      setTimeout(() => setTestStatus('idle'), 3000);
-    }
-  };
-
-  const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
       <header className="bg-white/80 backdrop-blur-xl border-b border-gray-200 sticky top-0 z-50">
@@ -213,7 +192,7 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center gap-3">
              {globalConfig.accessToken ? (
-               <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100">
+               <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 shadow-sm">
                   <Globe size={16} /> <span className="text-[10px] font-black uppercase tracking-tight">Cloud Online</span>
                </div>
              ) : (
@@ -221,9 +200,6 @@ const App: React.FC = () => {
                   <Globe size={16} /> <span className="text-[10px] font-black uppercase tracking-tight">Cloud Offline</span>
                </div>
              )}
-             <button onClick={() => setView('settings')} className={`p-2.5 rounded-xl transition-all ${view === 'settings' ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'text-gray-400 hover:bg-gray-100'}`}>
-               <SettingsIcon size={22} />
-             </button>
           </div>
         </div>
       </header>
@@ -244,7 +220,7 @@ const App: React.FC = () => {
               <div className="bg-white rounded-[3rem] p-20 border-4 border-dashed border-slate-100 flex flex-col items-center justify-center text-center">
                 <Database size={64} className="text-slate-100 mb-6" />
                 <h3 className="text-2xl font-black text-slate-300">Chưa có dự án nào</h3>
-                <p className="text-slate-400 mt-2 max-w-sm">Dữ liệu sẽ được lưu trữ trực tiếp trên Google Drive của bạn dưới dạng Spreadsheet.</p>
+                <p className="text-slate-400 mt-2 max-w-sm">Tất cả dữ liệu được đồng bộ tự động với Google Drive của bạn thông qua cấu hình trong file .env</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -253,74 +229,12 @@ const App: React.FC = () => {
                     <div className="bg-blue-50 p-4 rounded-3xl text-blue-600 w-fit mb-6 group-hover:bg-blue-600 group-hover:text-white transition-all"><Database size={24} /></div>
                     <h3 className="text-xl font-black text-gray-900 mb-2 truncate">{p.name}</h3>
                     <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase">
-                      <Table size={12} /> Sync: Google Sheets
+                      <Table size={12} /> Live Cloud Sync
                     </div>
                   </div>
                 ))}
               </div>
             )}
-          </div>
-        )}
-
-        {view === 'settings' && (
-          <div className="max-w-2xl mx-auto space-y-8 animate-in slide-in-from-bottom-4 duration-300">
-            <div className="flex items-center gap-4 mb-4">
-              <button onClick={() => setView('dashboard')} className="p-2 hover:bg-white rounded-full"><ChevronLeft size={24} /></button>
-              <h2 className="text-3xl font-black tracking-tighter">Cấu hình Cloud</h2>
-            </div>
-
-            <section className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100 space-y-10">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-widest">
-                    <Key size={14} /> Google Access Token
-                  </label>
-                  <a href="https://developers.google.com/oauthplayground/" target="_blank" className="text-[10px] font-black text-blue-600 flex items-center gap-1 hover:underline">
-                    LẤY TOKEN <ExternalLink size={10} />
-                  </a>
-                </div>
-                <textarea 
-                  className="w-full bg-slate-50 p-4 rounded-2xl border border-slate-100 outline-none focus:ring-4 ring-blue-500/10 font-mono text-sm h-24 resize-none"
-                  value={globalConfig.accessToken}
-                  onChange={(e) => saveConfig({ ...globalConfig, accessToken: e.target.value })}
-                  placeholder="ya29.a0AfH6S..."
-                />
-                <button 
-                  onClick={handleTestConnection}
-                  disabled={testStatus === 'loading'}
-                  className={`w-full py-4 rounded-2xl font-black text-xs border transition-all flex items-center justify-center gap-2 ${
-                    testStatus === 'loading' ? 'bg-slate-50 text-slate-400' :
-                    testStatus === 'success' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                    'bg-white text-blue-600 border-blue-100 hover:bg-blue-50'
-                  }`}
-                >
-                  {testStatus === 'loading' ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-                  KIỂM TRA KẾT NỐI
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <label className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-widest">
-                  <FolderOpen size={14} /> Drive Folder ID
-                </label>
-                <input 
-                  className="w-full bg-slate-50 p-4 rounded-2xl border border-slate-100 outline-none focus:ring-4 ring-blue-500/10 font-mono text-sm"
-                  value={globalConfig.defaultGoogleDriveFolderId}
-                  onChange={(e) => saveConfig({ ...globalConfig, defaultGoogleDriveFolderId: e.target.value })}
-                  placeholder="ID thư mục mặc định (root)"
-                />
-              </div>
-
-              <div className="pt-6 border-t border-slate-50">
-                <div className="flex items-center gap-4 p-6 bg-slate-900 rounded-3xl border border-slate-800 shadow-xl">
-                  <div className="bg-blue-600 p-3 rounded-2xl text-white shadow-lg"><ShieldCheck size={24} /></div>
-                  <div>
-                    <h4 className="text-sm font-black text-white">Gemini AI Engine</h4>
-                    <p className="text-[10px] text-blue-400 font-bold uppercase mt-0.5 tracking-widest">API_KEY từ file .env đã sẵn sàng</p>
-                  </div>
-                </div>
-              </div>
-            </section>
           </div>
         )}
 
@@ -356,7 +270,7 @@ const App: React.FC = () => {
                   <div className="bg-white rounded-[3rem] border border-slate-100 overflow-hidden shadow-sm min-h-[400px]">
                     <div className="px-8 py-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
                        <span className="font-black uppercase text-[10px] text-slate-400 tracking-widest flex items-center gap-2"><Table size={14} /> Danh sách API</span>
-                       <span className="text-[10px] font-bold text-emerald-500 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">Live Cloud Sync</span>
+                       <span className="text-[10px] font-bold text-emerald-500 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">Syncing with Sheet</span>
                     </div>
                     {currentProject.apis.length === 0 ? (
                       <div className="p-20 text-center flex flex-col items-center">
@@ -434,7 +348,6 @@ const App: React.FC = () => {
                     </div>
                     
                     <div className="space-y-4">
-                      {/* Fixed closing tag from </ts> to </label> on the line below */}
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mô tả logic xử lý API</label>
                       <textarea 
                         className="w-full bg-slate-50 p-6 rounded-3xl border border-transparent focus:border-blue-100 outline-none transition-all text-sm h-32"
@@ -530,23 +443,22 @@ const App: React.FC = () => {
       {error && (
         <div className="fixed bottom-10 right-10 z-[300] animate-in slide-in-from-right-10">
           <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-2xl border border-white/10 flex flex-col gap-6 max-w-sm">
-            <div className="flex items-center gap-4">
-              <div className="bg-red-600 p-3 rounded-2xl shadow-lg shadow-red-500/30">
-                {error.isAuth ? <ShieldAlert size={24} /> : error.isCors ? <Globe size={24} /> : <AlertCircle size={24} />}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="bg-red-600 p-3 rounded-2xl shadow-lg shadow-red-500/30">
+                  {error.isAuth ? <ShieldAlert size={24} /> : error.isCors ? <Globe size={24} /> : <AlertCircle size={24} />}
+                </div>
+                <div>
+                  <p className="font-black uppercase text-[10px] tracking-widest text-red-500">
+                    {error.isAuth ? 'THIẾT LẬP SAI' : error.isCors ? 'KẾT NỐI BỊ CHẶN' : 'LỖI HỆ THỐNG'}
+                  </p>
+                  <p className="text-sm font-bold mt-1 leading-relaxed">{error.message}</p>
+                </div>
               </div>
-              <div>
-                <p className="font-black uppercase text-[10px] tracking-widest text-red-500">
-                  {error.isAuth ? 'THIẾT LẬP SAI' : error.isCors ? 'KẾT NỐI BỊ CHẶN' : 'LỖI HỆ THỐNG'}
-                </p>
-                <p className="text-sm font-bold mt-1 leading-relaxed">{error.message}</p>
-              </div>
+              <button onClick={() => setError(null)} className="p-2 hover:bg-white/10 rounded-full transition-all">
+                <X size={20} />
+              </button>
             </div>
-            <button 
-              onClick={() => { setView('settings'); setError(null); }}
-              className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-xs shadow-xl transition-all flex items-center justify-center gap-2"
-            >
-              <LogIn size={16} /> KIỂM TRA CÀI ĐẶT
-            </button>
           </div>
         </div>
       )}
