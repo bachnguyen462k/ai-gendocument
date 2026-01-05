@@ -1,6 +1,4 @@
 
-import React from 'react';
-
 export const DEFAULT_TEMPLATE = `
 # API Documentation: {{API_NAME}}
 
@@ -29,10 +27,6 @@ export const DEFAULT_TEMPLATE = `
 \`\`\`json
 {{RESPONSE_JSON}}
 \`\`\`
-
-## Notes
-- All requests must include an \`Authorization\` header.
-- Error codes follow standard HTTP status conventions.
 `;
 
-export const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
+export const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];

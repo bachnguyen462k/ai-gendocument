@@ -26,12 +26,6 @@ export interface CloudConfig {
   autoSync: boolean;
 }
 
-export interface GlobalConfig {
-  defaultGoogleDriveFolderId: string;
-  autoSaveToCloud: boolean;
-  accessToken?: string; // Lưu token tạm thời cho session
-}
-
 export interface Project {
   id: string;
   name: string;
@@ -42,5 +36,14 @@ export interface Project {
   cloudConfig: CloudConfig;
 }
 
+// Fixed: Added GlobalConfig interface used in App.tsx imports
+export interface GlobalConfig {
+  googleAccessToken: string;
+  googleRefreshToken: string;
+  googleClientId: string;
+  googleClientSecret: string;
+  googleDriveFolderId: string;
+}
+
 export type AppView = 'dashboard' | 'project-detail' | 'api-edit';
-export type AppStatus = 'idle' | 'processing' | 'completed' | 'error' | 'syncing' | 'unauthorized';
+export type AppStatus = 'idle' | 'processing' | 'completed' | 'error' | 'syncing';
