@@ -3,7 +3,7 @@ import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { ApiInfo } from "../types";
 
 export const generateApiDoc = async (apis: ApiInfo[], template: string): Promise<string> => {
-  // Fix: Use process.env.API_KEY directly when initializing the GoogleGenAI client
+  // Khởi tạo SDK với model nhanh nhất cho tác vụ văn bản
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   if (!process.env.API_KEY) {
@@ -22,32 +22,38 @@ export const generateApiDoc = async (apis: ApiInfo[], template: string): Promise
     Outputs: ${JSON.stringify(api.outputParams)}
   `).join('\n\n');
 
-  const prompt = `
-    Bạn là một kỹ sư viết tài liệu kỹ thuật (Technical Writer) chuyên nghiệp. 
-    Hãy sử dụng mẫu dưới đây để tạo tài liệu đặc tả API cho danh sách các API sau.
-    
-    YÊU CẦU:
-    1. Phân tích cấu trúc JSON để mô tả chi tiết từng trường dữ liệu.
-    2. Viết bằng ngôn ngữ kỹ thuật chuẩn mực, dễ hiểu.
-    3. Trình bày đẹp mắt dưới dạng Markdown.
-    4. Giữ nguyên định dạng của các placeholder trong mẫu nếu không có dữ liệu thay thế.
+  // Rút gọn system instruction để AI xử lý nhanh hơn
+  const systemInstruction = `
+    Bạn là Technical Writer. 
+    Nhiệm vụ: Chuyển đổi dữ liệu API thành Markdown dựa trên mẫu template.
+    Yêu cầu: 
+    1. Trình bày bảng tham số chuyên nghiệp.
+    2. Giải thích logic từ JSON.
+    3. Phản hồi ngắn gọn, tập trung vào nội dung tài liệu.
+  `;
 
-    DANH SÁCH API CẦN VIẾT:
+  const prompt = `
+    DỮ LIỆU API:
     ${apisDataString}
 
-    MẪU TÀI LIỆU MỤC TIÊU:
+    MẪU TEMPLATE:
     ${template}
 
-    Hãy trả về toàn bộ tài liệu Markdown hoàn chỉnh.
+    Hãy viết tài liệu Markdown hoàn chỉnh ngay lập tức.
   `;
 
   try {
     const response: GenerateContentResponse = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-lite-latest', // Model cực nhanh, độ trễ thấp
       contents: prompt,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.4, // Giảm độ sáng tạo để tăng tốc độ và độ chính xác kỹ thuật
+        topP: 0.8,
+        thinkingConfig: { thinkingBudget: 0 } // Tắt chế độ suy nghĩ sâu để trả kết quả ngay
+      },
     });
 
-    // Fix: Access the .text property directly (not a method call) as per SDK rules
     return response.text || "AI không trả về kết quả.";
   } catch (error: any) {
     console.error("Gemini Error:", error);
