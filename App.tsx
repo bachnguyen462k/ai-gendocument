@@ -28,7 +28,7 @@ const CONFIG_KEY = 'api_doc_architect_config';
 const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   
-  // Khởi tạo globalConfig với giá trị ưu tiên từ process.env
+  // Khởi tạo globalConfig với kiểm tra an toàn cho môi trường trình duyệt
   const [globalConfig, setGlobalConfig] = useState<GlobalConfig>(() => {
     const savedConfig = localStorage.getItem(CONFIG_KEY);
     let config: GlobalConfig = {
@@ -45,15 +45,25 @@ const App: React.FC = () => {
       }
     }
 
-    // Ghi đè bằng biến môi trường từ .env nếu có
-    const envToken = (process.env as any).GOOGLE_ACCESS_TOKEN;
-    const envFolderId = (process.env as any).GOOGLE_DRIVE_FOLDER_ID;
+    // Kiểm tra an toàn biến process một cách tuyệt đối
+    // Tránh việc truy cập trực tiếp process.env nếu process không tồn tại
+    const isProcessAvailable = typeof process !== 'undefined' && process !== null;
+    
+    if (isProcessAvailable) {
+      try {
+        // @ts-ignore
+        const envToken = process.env?.GOOGLE_ACCESS_TOKEN;
+        // @ts-ignore
+        const envFolderId = process.env?.GOOGLE_DRIVE_FOLDER_ID;
+        
+        if (envToken) config.accessToken = envToken;
+        if (envFolderId) config.defaultGoogleDriveFolderId = envFolderId;
+      } catch (e) {
+        console.warn("Không thể đọc được biến môi trường, tiếp tục với cấu hình mặc định.");
+      }
+    }
 
-    return {
-      ...config,
-      defaultGoogleDriveFolderId: envFolderId || config.defaultGoogleDriveFolderId,
-      accessToken: envToken || config.accessToken
-    };
+    return config;
   });
 
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
@@ -92,10 +102,10 @@ const App: React.FC = () => {
     const msg = err.message || "";
     
     if (msg === 'UNAUTHORIZED' || msg === 'MISSING_TOKEN') {
-      setError({ message: "Phiên đăng nhập Google đã hết hạn hoặc thiếu Token. Vui lòng kiểm tra file .env hoặc cài đặt.", isAuth: true });
+      setError({ message: "Phiên đăng nhập Google đã hết hạn hoặc thiếu Token. Vui lòng kiểm tra lại file .env hoặc cài đặt Cloud.", isAuth: true });
     } else if (msg.includes('Failed to fetch') || msg.includes('CORS')) {
       setError({ 
-        message: "Lỗi kết nối (CORS). Hãy đảm bảo domain này được cấu hình trong Google Cloud Console.", 
+        message: "Lỗi kết nối (CORS). Hãy đảm bảo domain này được cấu hình trong Authorized Origins tại Google Cloud Console.", 
         isAuth: false,
         isCors: true 
       });
@@ -123,7 +133,7 @@ const App: React.FC = () => {
 
   const createProject = async () => {
     if (!globalConfig.accessToken) {
-      setError({ message: "Vui lòng cấu hình Google Access Token trong file .env hoặc Settings.", isAuth: true });
+      setError({ message: "Vui lòng cấu hình Google Access Token trước khi tạo dự án.", isAuth: true });
       setView('settings');
       return;
     }
@@ -288,7 +298,7 @@ const App: React.FC = () => {
                 </div>
                 <div className="flex justify-between items-center">
                   <p className="text-[10px] text-slate-400 font-bold leading-relaxed px-1">
-                    Bạn có thể cấu hình Token này trong file .env để tự động tải khi khởi chạy.
+                    Token này được ứng dụng lấy tự động từ file .env nếu bạn đã cấu hình GOOGLE_ACCESS_TOKEN.
                   </p>
                   <button 
                     onClick={handleTestConnection}
@@ -323,7 +333,7 @@ const App: React.FC = () => {
                   <div className="bg-blue-600 p-3 rounded-2xl text-white shadow-lg"><ShieldCheck size={24} /></div>
                   <div>
                     <h4 className="text-sm font-black text-white">Gemini AI Engine</h4>
-                    <p className="text-[10px] text-blue-400 font-bold uppercase mt-0.5 tracking-widest">Sử dụng API_KEY từ .env</p>
+                    <p className="text-[10px] text-blue-400 font-bold uppercase mt-0.5 tracking-widest">Sử dụng API_KEY từ biến môi trường</p>
                   </div>
                 </div>
               </div>
@@ -631,36 +641,18 @@ const App: React.FC = () => {
               </div>
               <div>
                 <p className="font-black uppercase text-[10px] tracking-widest text-red-500">
-                  {error.isAuth ? 'AUTH/TOKEN ISSUE' : error.isCors ? 'CORS BLOCKED' : 'SYSTEM ERROR'}
+                  {error.isAuth ? 'THIẾT LẬP SAI' : error.isCors ? 'KẾT NỐI BỊ CHẶN' : 'LỖI HỆ THỐNG'}
                 </p>
                 <p className="text-sm font-bold mt-1 leading-relaxed">{error.message}</p>
               </div>
             </div>
             
-            {error.isCors && (
-               <div className="bg-white/5 p-4 rounded-xl border border-white/10 space-y-2">
-                 <p className="text-[10px] font-bold text-slate-400 uppercase">Cách sửa:</p>
-                 <p className="text-[10px] text-slate-300 leading-relaxed">
-                   Bạn cần thêm domain này vào <b>Authorized JavaScript origins</b> trong Google Cloud Console.
-                 </p>
-               </div>
-            )}
-            
-            {error.isAuth ? (
-              <button 
-                onClick={() => { setView('settings'); setError(null); }}
-                className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-xs shadow-xl shadow-blue-500/20 transition-all flex items-center justify-center gap-2"
-              >
-                <LogIn size={16} /> CẬP NHẬT KẾT NỐI
-              </button>
-            ) : (
-              <button 
-                onClick={() => setError(null)}
-                className="w-full py-4 bg-white/10 hover:bg-white/20 text-white rounded-2xl font-black text-xs transition-all"
-              >
-                ĐÓNG THÔNG BÁO
-              </button>
-            )}
+            <button 
+              onClick={() => { setView('settings'); setError(null); }}
+              className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-xs shadow-xl shadow-blue-500/20 transition-all flex items-center justify-center gap-2"
+            >
+              <LogIn size={16} /> KIỂM TRA CÀI ĐẶT
+            </button>
           </div>
         </div>
       )}

@@ -3,7 +3,24 @@ import { GoogleGenAI } from "@google/genai";
 import { ApiInfo } from "../types";
 
 export const generateApiDoc = async (apis: ApiInfo[], templateHtml: string): Promise<string> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Kiểm tra an toàn biến process.env tuyệt đối cho browser
+  let apiKey = "";
+  try {
+    const isProcessAvailable = typeof process !== 'undefined' && process !== null;
+    if (isProcessAvailable) {
+      // @ts-ignore
+      apiKey = process.env?.API_KEY || "";
+    }
+  } catch (e) {
+    console.error("Lỗi khi truy cập API_KEY từ môi trường", e);
+  }
+
+  // Nếu không có API_KEY, Gemini SDK sẽ báo lỗi khi call, chúng ta bọc nó lại
+  if (!apiKey) {
+    throw new Error("MISSING_API_KEY: Vui lòng cấu hình API_KEY trong file .env");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
   
   const apisDataString = apis.map((api, index) => `
     API #${index + 1}:
@@ -18,7 +35,6 @@ export const generateApiDoc = async (apis: ApiInfo[], templateHtml: string): Pro
     - Có ảnh Sequence Diagram: ${api.sequenceDiagram ? 'CÓ' : 'KHÔNG'}
   `).join('\n\n---\n\n');
 
-  // Fix: Removed out-of-scope 'index' variable and replaced it with a generic placeholder instruction
   const prompt = `
     Bạn là một kỹ sư hệ thống chuyên viết tài liệu đặc tả kỹ thuật API (Technical Design Document).
     Nhiệm vụ: Sử dụng nội dung từ file mẫu (TEMPLATE) và điền thông tin chi tiết các API vào đúng các mục tương ứng.
@@ -64,6 +80,6 @@ export const generateApiDoc = async (apis: ApiInfo[], templateHtml: string): Pro
     return docContent;
   } catch (error) {
     console.error("Gemini Error:", error);
-    throw new Error("Lỗi khi tạo tài liệu chi tiết.");
+    throw new Error("Lỗi khi tạo tài liệu chi tiết. Hãy kiểm tra API_KEY và kết nối mạng.");
   }
 };
