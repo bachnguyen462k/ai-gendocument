@@ -89,10 +89,10 @@ const App: React.FC = () => {
   const handleError = (err: any) => {
     console.error("Critical Error Catch:", err);
     let msg = err.message || "Đã có lỗi xảy ra";
-    const isAuth = msg.includes('UNAUTHORIZED') || msg.includes('MISSING_TOKEN') || msg.includes('401');
+    const isAuth = msg.includes('UNAUTHORIZED') || msg.includes('MISSING_TOKEN') || msg.includes('401') || msg.includes('403');
     
     if (isAuth && !env.GOOGLE_REFRESH_TOKEN) {
-      msg = "Lỗi xác thực (401). Token đã hết hạn và bạn chưa cấu hình Refresh Token để tự động gia hạn.";
+      msg = "Lỗi xác thực. Token đã hết hạn và bạn chưa cấu hình Refresh Token để tự động gia hạn.";
     }
     
     setError({ message: msg, isAuth });
@@ -101,15 +101,12 @@ const App: React.FC = () => {
   };
 
   const updateProjectLocal = (updates: Partial<Project>, projectId: string) => {
-    const updatedProjects = projects.map(p => {
-      if (p.id === projectId) {
-        return { ...p, ...updates, updatedAt: Date.now() };
-      }
-      return p;
+    setProjects(prev => {
+      const updated = prev.map(p => p.id === projectId ? { ...p, ...updates, updatedAt: Date.now() } : p);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      return updated;
     });
-    setProjects(updatedProjects);
     setSyncStatus('pending');
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProjects));
   };
 
   const handleScanCloud = async () => {
@@ -120,30 +117,48 @@ const App: React.FC = () => {
     setIsScanning(true);
     try {
       const folders = await listRemoteProjectFolders(env);
-      const newCloudProjects: Project[] = [];
+      const cloudFetchedProjects: Project[] = [];
 
       for (const folder of folders) {
-        const alreadyExists = projects.some(p => p.cloudConfig.googleDriveFolderId === folder.id);
-        if (alreadyExists) continue;
-
         const sheet = await findProjectSheetInFolder(env, folder.id);
         if (sheet) {
           try {
             const projectData = await fetchProjectFromSheet(env, sheet.id, folder.id);
             if (!projectData.template) projectData.template = DEFAULT_TEMPLATE;
-            newCloudProjects.push(projectData);
+            cloudFetchedProjects.push(projectData);
           } catch (e) {
             console.error(`Lỗi khi fetch dữ liệu từ project ${folder.name}:`, e);
           }
         }
       }
 
-      if (newCloudProjects.length > 0) {
-        const updatedProjects = [...newCloudProjects, ...projects];
-        setProjects(updatedProjects);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProjects));
+      if (cloudFetchedProjects.length > 0) {
+        setProjects(prevLocal => {
+          // Merge logic: Ưu tiên dữ liệu từ Cloud nếu có trùng googleDriveFolderId
+          const merged = [...prevLocal];
+          
+          cloudFetchedProjects.forEach(cp => {
+            const existingIdx = merged.findIndex(p => p.cloudConfig.googleDriveFolderId === cp.cloudConfig.googleDriveFolderId);
+            if (existingIdx !== -1) {
+              // Cập nhật project cũ bằng ID cũ để giữ tính nhất quán
+              merged[existingIdx] = { ...cp, id: merged[existingIdx].id };
+            } else {
+              // Thêm mới
+              merged.unshift(cp);
+            }
+          });
+
+          // Sắp xếp theo thời gian cập nhật mới nhất
+          const final = merged.sort((a, b) => b.updatedAt - a.updatedAt);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(final));
+          return [...final]; // Tạo array mới để kích hoạt re-render
+        });
+        
+        // Thông báo nhẹ nhàng
+        const updatedCount = cloudFetchedProjects.length;
+        console.log(`Đã đồng bộ ${updatedCount} dự án từ Google Drive.`);
       } else {
-        alert("Không tìm thấy dự án mới nào trên Cloud.");
+        alert("Không tìm thấy dự án hợp lệ nào trên Cloud (Thư mục phải chứa thẻ [API_DOC] và file DB_).");
       }
     } catch (err: any) {
       handleError(err);
@@ -167,18 +182,17 @@ const App: React.FC = () => {
 
   const updateProjectAndCloud = async (updates: Partial<Project>, projectId: string) => {
     updateProjectLocal(updates, projectId);
-    const project = projects.find(p => p.id === projectId);
-    if (project?.cloudConfig.autoSync) {
-      const updatedProject = { ...project, ...updates };
-      if (updatedProject.cloudConfig.googleSheetId) {
-        try {
-          await syncProjectToSheet(env, updatedProject.cloudConfig.googleSheetId, updatedProject);
-          setSyncStatus('synced');
-        } catch (err: any) {
-          handleError(err);
-        }
+    
+    // Đợi state cập nhật xong thông qua prev của updateProjectLocal hoặc dùng project trực tiếp nếu biết
+    setProjects(currentProjects => {
+      const project = currentProjects.find(p => p.id === projectId);
+      if (project?.cloudConfig.autoSync && project.cloudConfig.googleSheetId) {
+        syncProjectToSheet(env, project.cloudConfig.googleSheetId, project)
+          .then(() => setSyncStatus('synced'))
+          .catch(err => handleError(err));
       }
-    }
+      return currentProjects;
+    });
   };
 
   const handleUpdateField = (apiId: string, type: 'input' | 'output', fieldName: string, updates: Partial<ApiField>) => {
@@ -267,9 +281,13 @@ const App: React.FC = () => {
         cloudConfig: { googleDriveFolderId: folderId, googleSheetId: sheetId, autoSync: true }
       };
       await syncProjectToSheet(env, sheetId, newProj);
-      const updatedProjects = [newProj, ...projects];
-      setProjects(updatedProjects);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProjects));
+      
+      setProjects(prev => {
+        const updated = [newProj, ...prev];
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        return updated;
+      });
+
       setCurrentProjectId(newProj.id);
       setView('project-detail');
       setStatus('idle');
