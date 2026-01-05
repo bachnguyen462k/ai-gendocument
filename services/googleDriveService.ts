@@ -11,16 +11,37 @@ async function getValidToken(env: any) {
   return env.GOOGLE_ACCESS_TOKEN;
 }
 
+/**
+ * Hàm gọi API Google tập trung, xử lý headers chuẩn xác hơn
+ */
 async function gfetch(env: any, url: string, options: any = {}) {
   const token = await getValidToken(env);
+  
+  // Khởi tạo headers
+  const headers = new Headers();
+  headers.set('Authorization', `Bearer ${token}`);
+
+  // Nếu có headers tùy chỉnh, áp dụng chúng (trừ khi giá trị là undefined)
+  if (options.headers) {
+    Object.entries(options.headers).forEach(([k, v]) => {
+      if (v !== undefined && v !== null) {
+        headers.set(k, v as string);
+      }
+    });
+  }
+
+  // Tự động thêm Content-Type: application/json nếu chưa có và không phải là Blob/FormData
+  if (!headers.has('Content-Type') && 
+      !(options.body instanceof FormData) && 
+      !(options.body instanceof Blob)) {
+    headers.set('Content-Type', 'application/json');
+  }
+
   const res = await fetch(url, {
     ...options,
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...options.headers
-    }
+    headers: headers
   });
+
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.error?.message || `Google API Error: ${res.status}`);
@@ -29,10 +50,34 @@ async function gfetch(env: any, url: string, options: any = {}) {
 }
 
 /**
- * Lưu nội dung Template vào file text riêng biệt trên Drive
+ * Helper tạo body multipart/related chuẩn Google Drive API
  */
+async function createMultipartBody(metadata: any, content: Blob | string, mimeType: string) {
+  const boundary = '-------architect_api_boundary';
+  const delimiter = `\r\n--${boundary}\r\n`;
+  const closeDelimiter = `\r\n--${boundary}--`;
+
+  const metadataPart = JSON.stringify(metadata);
+  const contentBlob = content instanceof Blob ? content : new Blob([content], { type: mimeType });
+
+  // Kết hợp các phần thành một Blob duy nhất
+  const multipartBlob = new Blob([
+    delimiter,
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n',
+    metadataPart,
+    delimiter,
+    `Content-Type: ${mimeType}\r\n\r\n`,
+    contentBlob,
+    closeDelimiter
+  ], { type: `multipart/related; boundary=${boundary}` });
+
+  return {
+    body: multipartBlob,
+    contentType: `multipart/related; boundary=${boundary}`
+  };
+}
+
 export const updateTemplateFile = async (env: any, folderId: string, content: string) => {
-  // 1. Kiểm tra file cũ
   const q = `'${folderId}' in parents and name = 'PROJECT_TEMPLATE.txt' and trashed = false`;
   const list = await gfetch(env, `${DRIVE_API_BASE}/files?q=${encodeURIComponent(q)}`);
   const existingFile = list.files?.[0];
@@ -42,9 +87,7 @@ export const updateTemplateFile = async (env: any, folderId: string, content: st
     parents: existingFile ? undefined : [folderId] 
   };
 
-  const form = new FormData();
-  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-  form.append('file', new Blob([content], { type: 'text/plain' }));
+  const { body, contentType } = await createMultipartBody(metadata, content, 'text/plain');
 
   const url = existingFile 
     ? `${UPLOAD_API_BASE}/files/${existingFile.id}?uploadType=multipart` 
@@ -52,26 +95,9 @@ export const updateTemplateFile = async (env: any, folderId: string, content: st
 
   return await gfetch(env, url, { 
     method: existingFile ? 'PATCH' : 'POST', 
-    body: form,
-    headers: { 'Content-Type': undefined } // Để fetch tự set boundary
+    body: body,
+    headers: { 'Content-Type': contentType }
   });
-};
-
-/**
- * Đọc nội dung Template từ file text trên Drive
- */
-export const fetchTemplateContent = async (env: any, folderId: string) => {
-  const q = `'${folderId}' in parents and name = 'PROJECT_TEMPLATE.txt' and trashed = false`;
-  const list = await gfetch(env, `${DRIVE_API_BASE}/files?q=${encodeURIComponent(q)}`);
-  const file = list.files?.[0];
-  if (!file) return null;
-
-  const token = await getValidToken(env);
-  const res = await fetch(`${DRIVE_API_BASE}/files/${file.id}?alt=media`, {
-    headers: { 'Authorization': `Bearer ${token}` }
-  });
-  if (!res.ok) return null;
-  return res.text();
 };
 
 export const createProjectStructure = async (env: any, projectName: string, parentFolderId: string) => {
@@ -97,7 +123,6 @@ export const createProjectStructure = async (env: any, projectName: string, pare
 };
 
 export const syncProjectToSheet = async (env: any, sheetId: string, project: any) => {
-  // Đồng thời lưu template vào file riêng để tránh giới hạn 50k ký tự của Sheet
   if (project.cloudConfig.googleDriveFolderId) {
     await updateTemplateFile(env, project.cloudConfig.googleDriveFolderId, project.template);
   }
@@ -147,7 +172,6 @@ export const fetchProjectFromSheet = async (env: any, sheetId: string, folderId:
 
   if (rows.length < 5) throw new Error("File database không đúng định dạng");
 
-  // Ưu tiên đọc template từ file text
   const template = await fetchTemplateContent(env, folderId);
 
   const project: any = {
@@ -174,38 +198,49 @@ export const fetchProjectFromSheet = async (env: any, sheetId: string, folderId:
   return project;
 };
 
+export const fetchTemplateContent = async (env: any, folderId: string) => {
+  const q = `'${folderId}' in parents and name = 'PROJECT_TEMPLATE.txt' and trashed = false`;
+  const list = await gfetch(env, `${DRIVE_API_BASE}/files?q=${encodeURIComponent(q)}`);
+  const file = list.files?.[0];
+  if (!file) return null;
+
+  const token = await getValidToken(env);
+  const res = await fetch(`${DRIVE_API_BASE}/files/${file.id}?alt=media`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  if (!res.ok) return null;
+  return res.text();
+};
+
 export const uploadDocFile = async (env: any, folderId: string, fileName: string, content: string) => {
   const metadata = { name: `${fileName}.doc`, parents: [folderId], mimeType: 'application/msword' };
-  const form = new FormData();
-  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-  form.append('file', new Blob(['\ufeff', content], { type: 'text/html' }));
+  const { body, contentType } = await createMultipartBody(metadata, content, 'application/msword');
+  
   return await gfetch(env, `${UPLOAD_API_BASE}/files?uploadType=multipart`, { 
     method: 'POST', 
-    body: form,
-    headers: { 'Content-Type': undefined }
+    body: body,
+    headers: { 'Content-Type': contentType }
   });
 };
 
 export const uploadRawFile = async (env: any, folderId: string, file: File) => {
   const metadata = { name: `RAW_${file.name}`, parents: [folderId] };
-  const form = new FormData();
-  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-  form.append('file', file);
+  const { body, contentType } = await createMultipartBody(metadata, file, file.type || 'application/octet-stream');
+  
   return await gfetch(env, `${UPLOAD_API_BASE}/files?uploadType=multipart`, { 
     method: 'POST', 
-    body: form,
-    headers: { 'Content-Type': undefined }
+    body: body,
+    headers: { 'Content-Type': contentType }
   });
 };
 
 export const uploadImageFile = async (env: any, folderId: string, file: File, apiName: string) => {
   const metadata = { name: `IMG_${apiName}_${file.name}`, parents: [folderId] };
-  const form = new FormData();
-  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-  form.append('file', file);
+  const { body, contentType } = await createMultipartBody(metadata, file, file.type || 'image/png');
+  
   return await gfetch(env, `${UPLOAD_API_BASE}/files?uploadType=multipart`, { 
     method: 'POST', 
-    body: form,
-    headers: { 'Content-Type': undefined }
+    body: body,
+    headers: { 'Content-Type': contentType }
   });
 };
