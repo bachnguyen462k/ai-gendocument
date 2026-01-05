@@ -235,8 +235,6 @@ export const fetchTemplateContent = async (env: any, folderId: string) => {
   const file = list.files?.[0];
   if (!file) return null;
 
-  // Đối với download content trực tiếp, chúng ta cần gfetch với cấu trúc fetch thô hoặc thêm logic alt=media vào gfetch
-  // Ở đây chúng ta tạm dùng một trick là gọi lại fetch thô với token mới nhất
   const token = currentAccessToken || env.GOOGLE_ACCESS_TOKEN;
   const res = await fetch(`${DRIVE_API_BASE}/files/${file.id}?alt=media`, {
     headers: { 'Authorization': `Bearer ${token}` }
@@ -255,8 +253,18 @@ export const fetchTemplateContent = async (env: any, folderId: string) => {
 };
 
 export const uploadDocFile = async (env: any, folderId: string, fileName: string, content: string) => {
-  const metadata = { name: `${fileName}.doc`, parents: [folderId], mimeType: 'application/msword' };
-  const { body, contentType } = await createMultipartBody(metadata, content, 'application/msword');
+  // Sử dụng MIME type OpenXML chuẩn cho .docx
+  const mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const metadata = { name: `${fileName}.docx`, parents: [folderId], mimeType: mimeType };
+  
+  // Trick: Word có thể mở file HTML có cấu trúc đặc biệt và coi đó là document.
+  // Nếu muốn file .docx "thật" từ trình duyệt, ta thường dùng HTML format và Word sẽ tự parse.
+  const htmlContent = `
+    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+    <head><meta charset='utf-8'></head><body>${content.replace(/\n/g, '<br>')}</body></html>
+  `;
+  
+  const { body, contentType } = await createMultipartBody(metadata, htmlContent, mimeType);
   
   return await gfetch(env, `${UPLOAD_API_BASE}/files?uploadType=multipart`, { 
     method: 'POST', 

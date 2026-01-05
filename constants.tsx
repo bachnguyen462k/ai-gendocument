@@ -1,32 +1,40 @@
 
 export const DEFAULT_TEMPLATE = `
-# API Documentation: {{API_NAME}}
+# TÀI LIỆU KỸ THUẬT API: {{API_NAME}}
 
-## Overview
+## 1. Tổng quan
 - **Endpoint**: \`{{ENDPOINT}}\`
-- **Method**: \`{{METHOD}}\`
+- **Phương thức**: \`{{METHOD}}\`
+- **Mô tả**: {{DESCRIPTION}}
+- **Xác thực**: {{AUTH_TYPE}}
 
-## Request
-### Parameters
-| Name | Type | Description |
-| :--- | :--- | :--- |
-{{REQUEST_DESCRIPTION}}
+## 2. Chi tiết Request
+### 2.1. Tham số đầu vào (Parameters)
+{{REQUEST_DESCRIPTION_TABLE}}
 
-### Request Example (JSON)
+### 2.2. Ví dụ Request (JSON)
 \`\`\`json
 {{REQUEST_JSON}}
 \`\`\`
 
-## Response
-### Fields
-| Name | Type | Description |
-| :--- | :--- | :--- |
-{{RESPONSE_DESCRIPTION}}
+## 3. Chi tiết Response
+### 3.1. Cấu trúc dữ liệu trả về (Fields)
+{{RESPONSE_DESCRIPTION_TABLE}}
 
-### Response Example (JSON)
+### 3.2. Ví dụ Response (JSON)
 \`\`\`json
 {{RESPONSE_JSON}}
 \`\`\`
+
+## 4. Luồng xử lý (Sequence & Logic)
+### 4.1. Sơ đồ trình tự (Sequence Diagram)
+{{SEQUENCE_DIAGRAM}}
+
+### 4.2. Giải thích luồng nghiệp vụ
+{{SEQUENCE_FLOW}}
+
+---
+*Tài liệu được tạo tự động bởi API Doc Architect AI*
 `;
 
 export const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
